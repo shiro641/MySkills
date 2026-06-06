@@ -1,6 +1,8 @@
 ---
 name: personal-execution-skill
-description: Use this skill to create and operate a local Git-backed Personal OS for daily execution, projects, waiting/blocked tracking, automation candidates, weekly reviews, execution logs, and habit/routine management. Trigger when the user asks to use add task, call add-task, add a task, add a habit, make something a habit/routine/惯例/习惯/定式任务, mark something complete, update task status after completion, generate a daily plan, bootstrap a PersonalOS repository, review projects, detect Codex automation opportunities, or produce weekly reviews. This is a skill-backed script workflow, not an MCP tool.
+description: 
+    Use this skill to manage a Git-backed Personal OS for planning and execution.
+    Trigger when the user wants to create or update schedules, plans, tasks, habits, projects, reviews, execution logs, or automation workflows.
 ---
 
 # Personal Execution Skill
