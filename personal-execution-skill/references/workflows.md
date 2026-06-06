@@ -2,6 +2,12 @@
 
 默认用中文生成新的日报、周复盘、项目记录、自动化候选和面向用户的总结。
 
+## Routing Reminder
+
+When the user says "调用 add task", "作为 habit", "作为惯例", "作为习惯", or "完成时更新状态", this is a PersonalOS script workflow. Do not search for an MCP tool named `add task` or `habit`; use `scripts/personal_os.py`.
+
+After bootstrap, use the recorded default PersonalOS repository from `<skill_dir>/state/config.json` when the user does not specify a repository path. Pass an explicit repo path only when the user wants a different PersonalOS repository.
+
 ## File Modification Principles
 
 - Read before write.
@@ -15,7 +21,7 @@
 
 When adding a task, explicit user intent wins over classification. Examples:
 
-- "Add as Waiting: Alice to send invoice" goes to `state/waiting.md`.
+- "Add as Waiting: 等待对方发送发票" goes to `state/waiting.md`.
 - "Make this a Codex automation task: produce the report" goes to `tasks/automation-candidates.md`.
 - "Add a long-term project: relaunch website" creates or updates a project file.
 

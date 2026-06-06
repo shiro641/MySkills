@@ -21,17 +21,37 @@ Then ask Codex to use `personal-execution-skill`.
 python3 personal-execution-skill/scripts/personal_os.py bootstrap ./my-personal-os
 ```
 
-This creates the standard PersonalOS structure, initializes Git, writes example data, and creates the first commit.
+This creates the standard PersonalOS structure, initializes Git, writes empty factual ledgers, and creates the first commit. Bootstrap does not invent people, tasks, projects, habits, automation candidates, dailies, or weekly reviews.
+
+Bootstrap also records `./my-personal-os` as the default PersonalOS repository in `personal-execution-skill/state/config.json`. Later commands can omit the repo path unless you want to target a different PersonalOS repository.
 
 ## Common Commands
 
 ```bash
 python3 personal-execution-skill/scripts/personal_os.py daily ./my-personal-os
-python3 personal-execution-skill/scripts/personal_os.py add-task ./my-personal-os "Follow up with Alice on budget" --type waiting
+python3 personal-execution-skill/scripts/personal_os.py set-repo ./my-personal-os
+python3 personal-execution-skill/scripts/personal_os.py add-task ./my-personal-os "等待对方回复预算确认" --type waiting
+python3 personal-execution-skill/scripts/personal_os.py add-task ./my-personal-os "学习这个单词" --type habit
 python3 personal-execution-skill/scripts/personal_os.py add-task ./my-personal-os "Generate monthly metrics report from CSV"
-python3 personal-execution-skill/scripts/personal_os.py complete-task ./my-personal-os "Follow up with Alice"
+python3 personal-execution-skill/scripts/personal_os.py complete-task ./my-personal-os "等待对方回复预算确认"
 python3 personal-execution-skill/scripts/personal_os.py weekly-review ./my-personal-os
 python3 personal-execution-skill/scripts/personal_os.py project-review ./my-personal-os
+```
+
+After bootstrap, these shorter forms also work:
+
+```bash
+python3 personal-execution-skill/scripts/personal_os.py daily
+python3 personal-execution-skill/scripts/personal_os.py add-task "学习这个单词" --type habit
+python3 personal-execution-skill/scripts/personal_os.py complete-task "学习这个单词"
+python3 personal-execution-skill/scripts/personal_os.py weekly-review
+python3 personal-execution-skill/scripts/personal_os.py project-review
+```
+
+If the PersonalOS repository already exists somewhere else, record it first:
+
+```bash
+python3 personal-execution-skill/scripts/personal_os.py set-repo /path/to/personal-os
 ```
 
 ## PersonalOS Standard Structure
@@ -41,6 +61,8 @@ See `SKILL.md` and `references/schema.md` for the canonical structure and file s
 ## Notes
 
 - The Skill follows Intent First classification. If a user explicitly names a task type, that type wins.
+- If a user says "调用 add task", "作为 habit", "作为惯例", or "完成时更新状态", use this skill's script workflow directly; these are not MCP tool names.
+- Bootstrap records the user's default PersonalOS path in `state/config.json`; this runtime config should not be committed.
 - Automation candidates are not added to manual todos. They are routed to `tasks/automation-candidates.md` with prompt, steps, expected artifacts, and acceptance criteria.
 - Daily generation creates `dailies/YYYY-MM-DD.md` and should also create a new Codex project thread titled `日报 YYYY-MM-DD`.
 - After each update, inspect `git diff` and make a commit when the change is accepted.
