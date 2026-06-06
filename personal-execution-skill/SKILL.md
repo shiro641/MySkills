@@ -1,0 +1,184 @@
+---
+name: personal-execution-skill
+description: Use this skill to create and operate a local Git-backed Personal OS for daily execution, projects, waiting/blocked tracking, automation candidates, weekly reviews, execution logs, and future habit management. Trigger when the user asks to bootstrap a PersonalOS repository, generate a daily plan, add or complete tasks, review projects, detect Codex automation opportunities, or produce weekly reviews in their Personal Chief of Staff system.
+---
+
+# Personal Execution Skill
+
+Use this skill for a local Git repository that acts as a Personal Chief of Staff system. It manages daily execution, long-running projects, Waiting and Blocked items, automation candidates, weekly reviews, execution logs, and future habit loops.
+
+## Quick Start
+
+Prefer the bundled script for deterministic operations:
+
+```bash
+python3 <skill_dir>/scripts/personal_os.py bootstrap <target_repo>
+python3 <skill_dir>/scripts/personal_os.py daily <target_repo> --date YYYY-MM-DD
+python3 <skill_dir>/scripts/personal_os.py add-task <target_repo> "task text" --type today
+python3 <skill_dir>/scripts/personal_os.py complete-task <target_repo> "task text" --date YYYY-MM-DD
+python3 <skill_dir>/scripts/personal_os.py weekly-review <target_repo> --week-start YYYY-MM-DD
+python3 <skill_dir>/scripts/personal_os.py project-review <target_repo>
+```
+
+Read `references/workflows.md` before manually editing repository content or when a user asks for nuanced classification. Read `references/schema.md` when creating or repairing files.
+
+## When To Use
+
+Use this skill when the user asks to:
+
+- create or bootstrap a PersonalOS repository
+- generate a daily task list or daily review
+- add, classify, or route a task
+- complete a task and update related records
+- generate a weekly review
+- review long-term projects
+- identify tasks suitable for Codex automation
+- maintain Waiting, Blocked, Archive, Scheduled, or Habit records
+
+## Capabilities And Triggers
+
+- `bootstrap_personal_os`: "create PersonalOS", "bootstrap my Personal OS", "初始化 PersonalOS", "建立 Personal Chief of Staff 仓库"
+- `generate_daily`: "generate daily", "生成今日任务", "daily plan", "明天/今天的 Daily"
+- `add_task`: "add task", "新增任务", "记一条 Waiting", "加入长期项目", "加入自动化候选"
+- `complete_task`: "complete task", "完成任务", "mark done", "把 X 标记完成"
+- `generate_weekly_review`: "weekly review", "周复盘", "生成本周总结"
+- `project_review`: "review projects", "项目巡检", "哪些项目停滞/有风险"
+- `automation_detector`: "能不能交给 Codex", "适合自动化吗", "automation candidate"
+- `habit_manager`: "habit", "习惯", "每天/每周自动带入"
+
+## Standard PersonalOS Structure
+
+```text
+PersonalOS/
+├── README.md
+├── inbox.md
+├── dailies/
+│   └── YYYY-MM-DD.md
+├── weekly-reviews/
+│   └── YYYY-Www.md
+├── projects/
+│   └── sample-project.md
+├── tasks/
+│   ├── today.md
+│   ├── scheduled.md
+│   ├── automation-candidates.md
+│   └── archive.md
+├── state/
+│   ├── waiting.md
+│   ├── blocked.md
+│   ├── habits.md
+│   └── stats.md
+├── logs/
+│   └── execution-log.md
+└── templates/
+    ├── daily.md
+    ├── weekly-review.md
+    ├── project.md
+    ├── automation-candidate.md
+    └── habit.md
+```
+
+## Operating Rules
+
+1. Always read relevant files before editing: today's Daily, `inbox.md`, `tasks/*.md`, `state/waiting.md`, `state/blocked.md`, and relevant project files.
+2. Never overwrite user content. Append, update checklist markers, or add dated sections.
+3. Preserve Markdown headings and checkboxes.
+4. Use Intent First for `add_task`: if the user explicitly says the type, honor it.
+5. Only classify automatically when the user did not specify a type.
+6. Do not add suitable Codex automation work to manual todos. Route it to `tasks/automation-candidates.md` with Codex Prompt, execution steps, expected artifacts, and acceptance criteria.
+7. After modifications, show `git diff --stat` and a focused `git diff`.
+8. At key points, suggest a commit. For bootstrap, create the initial commit automatically.
+
+## Intent First Task Types
+
+If explicitly specified, route exactly as requested:
+
+- 今日任务 / Today Task -> today's Daily and `tasks/today.md`
+- 长期项目 / Project -> `projects/<slug>.md`
+- 定时任务 / 周期任务 / Scheduled Task -> `tasks/scheduled.md`
+- Codex 自动化任务 / Automation Candidate -> `tasks/automation-candidates.md`
+- Waiting -> `state/waiting.md`
+- Blocked -> `state/blocked.md`
+- 归档记录 / Archive -> `tasks/archive.md`
+- 习惯 / 定式任务 / Habit -> `state/habits.md`
+
+## Automatic Classification
+
+When intent is not explicit:
+
+- Waiting: task depends on a named person, reply, approval, delivery, vendor, or external owner.
+- Blocked: task cannot proceed because of missing access, decision, dependency, error, or unresolved risk.
+- Scheduled Task: task contains a date, recurrence, deadline, "every", "daily", "weekly", or "monthly".
+- Automation Candidate: task is file/code/data/document/email/search/report generation that Codex can likely execute end-to-end.
+- Project: task implies a multi-step outcome lasting more than one day or mentions project, milestone, launch, build, research, design, strategy.
+- Archive: task is explicitly a past record or completed log.
+- Today Task: default for immediate human action.
+
+## Core Workflows
+
+### bootstrap_personal_os
+
+Run the script:
+
+```bash
+python3 <skill_dir>/scripts/personal_os.py bootstrap <target_repo>
+```
+
+It creates the standard structure, writes templates and example data, initializes Git, and commits.
+
+### generate_daily
+
+1. Read yesterday's Daily if present.
+2. Read `tasks/today.md`, `projects/*.md`, `state/waiting.md`, `state/blocked.md`, `inbox.md`, and `tasks/automation-candidates.md`.
+3. Generate `dailies/YYYY-MM-DD.md` with: yesterday done, yesterday unfinished, Waiting, Blocked, project progress, today's suggestions, task checklist, new tasks, and review.
+4. Show diff and suggest commit.
+
+### add_task
+
+1. Identify explicit user type first.
+2. If no explicit type exists, classify using the automatic rules.
+3. If automation candidate, write the automation record and do not add to manual todos.
+4. Otherwise append to the correct file and today's Daily when applicable.
+5. Show diff and suggest commit.
+
+### complete_task
+
+1. Read today's Daily and likely source files.
+2. Mark matching open checkbox complete.
+3. Update related project, Waiting, or Blocked status when a match exists.
+4. Append `logs/execution-log.md`.
+5. Update `state/stats.md` when possible.
+6. Show diff and suggest commit.
+
+### generate_weekly_review
+
+1. Read Daily files for the week, project files, Waiting, Blocked, and automation candidates.
+2. Create `weekly-reviews/YYYY-Www.md`.
+3. Include completed work, unfinished work, Waiting summary, Blocked summary, project progress, automation benefit, and next-week suggestions.
+4. Show diff and suggest commit.
+
+### project_review
+
+1. Read all `projects/*.md`.
+2. Identify stale projects, stalled projects, and risky projects.
+3. Update project review notes or report recommendations to the user.
+
+### habit_manager
+
+Habit support is reserved in `state/habits.md` and `templates/habit.md`. Treat habits as recurring tasks with frequency, auto-include setting, completion log, streak, and completion rate.
+
+## Validation
+
+After any operation:
+
+```bash
+git -C <target_repo> status --short
+git -C <target_repo> diff --stat
+git -C <target_repo> diff
+```
+
+For script health:
+
+```bash
+python3 <skill_dir>/scripts/personal_os.py --help
+```
