@@ -2,6 +2,8 @@
 
 This file defines the canonical repository layout used by `personal-execution-skill`.
 
+All newly generated user-facing Markdown content should be written in Chinese by default.
+
 ## Files
 
 - `README.md`: repo purpose, operating loop, and conventions.
@@ -22,42 +24,42 @@ This file defines the canonical repository layout used by `personal-execution-sk
 
 ## Daily Required Sections
 
-- Yesterday Done
-- Yesterday Unfinished
-- Waiting
-- Blocked
-- Long-Term Project Progress
-- Today Suggestions
-- Today Task List
-- Today New Tasks
-- Today Review
+- 昨日完成
+- 昨日未完成
+- 等待中
+- 阻塞项
+- 长期项目进展
+- 今日建议
+- 今日任务清单
+- 今日新增任务
+- 今日复盘
 
 ## Project Required Fields
 
-- Goal
-- Current Phase
-- Next Actions
-- Progress
-- Last Updated
-- Waiting
-- Blocked
-- Review Notes
+- 目标
+- 当前阶段
+- 下一步行动
+- 进展
+- 最后更新
+- 等待中
+- 阻塞项
+- 复盘笔记
 
 ## Automation Candidate Required Fields
 
-- Source Task
-- Why Codex
+- 来源任务
+- 为什么适合 Codex
 - Codex Prompt
-- Execution Steps
-- Expected Artifacts
-- Acceptance Criteria
-- Status
+- 执行步骤
+- 预期产物
+- 验收标准
+- 状态
 
 ## Habit Required Fields
 
 - Habit
-- Frequency
-- Auto Include In Daily
-- Completion Log
-- Current Streak
-- Completion Rate
+- 频率
+- 自动加入日报
+- 完成记录
+- 当前连续天数
+- 完成率

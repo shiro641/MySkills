@@ -1,39 +1,39 @@
-# Daily - {{date}}
+# 日报 - {{date}}
 
-## Yesterday Done
+## 昨日完成
 
-- No completed items recorded yet.
+- 还没有记录已完成事项。
 
-## Yesterday Unfinished
+## 昨日未完成
 
-- No unfinished items carried over yet.
+- 没有需要结转的未完成事项。
 
-## Waiting
+## 等待中
 
-- No active waiting items.
+- 当前没有等待中事项。
 
-## Blocked
+## 阻塞项
 
-- No active blocked items.
+- 当前没有阻塞项。
 
-## Long-Term Project Progress
+## 长期项目进展
 
-- No project progress recorded yet.
+- 还没有记录项目进展。
 
-## Today Suggestions
+## 今日建议
 
-- Review Inbox and pick the highest-leverage next action.
+- 检查收件箱，并选择最有杠杆的下一步行动。
 
-## Today Task List
+## 今日任务清单
 
-- [ ] Review Inbox
+- [ ] 检查收件箱
 
-## Today New Tasks
+## 今日新增任务
 
-- None yet.
+- 暂无。
 
-## Today Review
+## 今日复盘
 
-- Wins:
-- Friction:
-- Carry forward:
+- 收获:
+- 卡点:
+- 结转:

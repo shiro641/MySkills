@@ -1,29 +1,29 @@
-# Weekly Review - {{week_label}}
+# 周复盘 - {{week_label}}
 
-## This Week Completed
+## 本周完成
 
-- No completed items recorded yet.
+- 还没有记录已完成事项。
 
-## This Week Unfinished
+## 本周未完成
 
-- No unfinished items recorded yet.
+- 还没有记录未完成事项。
 
-## Waiting Summary
+## 等待中汇总
 
-- No waiting items recorded yet.
+- 当前没有等待中事项。
 
-## Blocked Summary
+## 阻塞项汇总
 
-- No blocked items recorded yet.
+- 当前没有阻塞项。
 
-## Project Progress
+## 项目进展
 
-- No project progress recorded yet.
+- 还没有记录项目进展。
 
-## Automation Benefit
+## 自动化收益
 
-- No automation benefit recorded yet.
+- 还没有记录自动化收益。
 
-## Next Week Suggestions
+## 下周建议
 
-- Pick one project milestone and one personal maintenance task.
+- 选择一个项目里程碑和一个个人维护任务。

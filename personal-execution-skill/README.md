@@ -2,6 +2,8 @@
 
 A reusable Codex Skill for creating and operating a local Git-backed Personal OS: a Personal Chief of Staff system for daily work, long-term projects, Waiting and Blocked items, automation candidates, weekly reviews, execution logs, and future habits.
 
+默认生成中文内容。日报会同时写入 Markdown 文件，并由 Codex 在当前项目下新建一个聊天会话，把日报正文发送给用户。
+
 ## Install
 
 Copy or symlink this directory into your Codex skills directory:
@@ -40,4 +42,5 @@ See `SKILL.md` and `references/schema.md` for the canonical structure and file s
 
 - The Skill follows Intent First classification. If a user explicitly names a task type, that type wins.
 - Automation candidates are not added to manual todos. They are routed to `tasks/automation-candidates.md` with prompt, steps, expected artifacts, and acceptance criteria.
+- Daily generation creates `dailies/YYYY-MM-DD.md` and should also create a new Codex project thread titled `日报 YYYY-MM-DD`.
 - After each update, inspect `git diff` and make a commit when the change is accepted.

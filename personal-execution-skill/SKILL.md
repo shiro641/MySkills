@@ -7,6 +7,8 @@ description: Use this skill to create and operate a local Git-backed Personal OS
 
 Use this skill for a local Git repository that acts as a Personal Chief of Staff system. It manages daily execution, long-running projects, Waiting and Blocked items, automation candidates, weekly reviews, execution logs, and future habit loops.
 
+默认使用中文生成所有面向用户的内容，包括日报、周复盘、项目模板、任务说明、自动化候选记录和最终回复。Markdown 文件仍然是标准载体，但正文标题和占位说明应为中文。
+
 ## Quick Start
 
 Prefer the bundled script for deterministic operations:
@@ -21,6 +23,8 @@ python3 <skill_dir>/scripts/personal_os.py project-review <target_repo>
 ```
 
 Read `references/workflows.md` before manually editing repository content or when a user asks for nuanced classification. Read `references/schema.md` when creating or repairing files.
+
+When generating a Daily, also create a new Codex chat thread in the current project and send the generated Daily to the user in that new thread. Use the Codex thread tools (`create_thread`, and `set_thread_title` when available). The script prints a `--- 日报会话播报正文 ---` section; use that exact section as the new thread's initial prompt whenever possible.
 
 ## When To Use
 
@@ -88,6 +92,8 @@ PersonalOS/
 6. Do not add suitable Codex automation work to manual todos. Route it to `tasks/automation-candidates.md` with Codex Prompt, execution steps, expected artifacts, and acceptance criteria.
 7. After modifications, show `git diff --stat` and a focused `git diff`.
 8. At key points, suggest a commit. For bootstrap, create the initial commit automatically.
+9. Prefer Chinese for generated content and user-facing summaries. Preserve existing user-authored language when editing old files unless the operation is regenerating a template/report.
+10. For every `generate_daily` operation, after the Markdown file is created or found, create a separate chat thread under the current project and deliver the Daily there.
 
 ## Intent First Task Types
 
@@ -130,8 +136,10 @@ It creates the standard structure, writes templates and example data, initialize
 
 1. Read yesterday's Daily if present.
 2. Read `tasks/today.md`, `projects/*.md`, `state/waiting.md`, `state/blocked.md`, `inbox.md`, and `tasks/automation-candidates.md`.
-3. Generate `dailies/YYYY-MM-DD.md` with: yesterday done, yesterday unfinished, Waiting, Blocked, project progress, today's suggestions, task checklist, new tasks, and review.
-4. Show diff and suggest commit.
+3. Generate `dailies/YYYY-MM-DD.md` in Chinese with: yesterday done, yesterday unfinished, Waiting, Blocked, project progress, today's suggestions, task checklist, new tasks, and review.
+4. Capture the script's `--- 日报会话播报正文 ---` section or read the generated Daily file and compose a concise Chinese announcement.
+5. Create a new Codex thread in the current project, using the local project environment, with the announcement as the initial prompt. Title it `日报 YYYY-MM-DD` when a thread-title tool is available.
+6. Show diff and suggest commit.
 
 ### add_task
 

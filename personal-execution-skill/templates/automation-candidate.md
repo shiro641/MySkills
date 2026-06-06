@@ -1,34 +1,34 @@
 ## {{date}} - {{title}}
 
-### Source Task
+### 来源任务
 
 {{source_task}}
 
-### Why Codex
+### 为什么适合 Codex
 
-This appears to be executable through files, code, data transformation, drafting, research, or repeatable workflow steps.
+这个任务看起来可以通过文件、代码、数据转换、起草、研究或可重复流程来端到端执行。
 
 ### Codex Prompt
 
 {{codex_prompt}}
 
-### Execution Steps
+### 执行步骤
 
-1. Inspect the relevant repository, files, or source material.
-2. Make the requested changes or generate the requested artifact.
-3. Run validation checks.
-4. Summarize outputs, diffs, and residual risks.
+1. 检查相关仓库、文件或来源材料。
+2. 完成请求的修改，或生成请求的交付物。
+3. 运行验证检查。
+4. 总结输出、差异和残余风险。
 
-### Expected Artifacts
+### 预期产物
 
-- Updated files or generated report.
+- 更新后的文件或生成的报告。
 
-### Acceptance Criteria
+### 验收标准
 
-- The requested output exists.
-- Validation has been run or an explicit reason is recorded.
-- The final summary states what changed.
+- 请求的输出已经存在。
+- 已运行验证，或明确记录无法验证的原因。
+- 最终总结说明了变更内容。
 
-### Status
+### 状态
 
-- [ ] Candidate
+- [ ] 候选

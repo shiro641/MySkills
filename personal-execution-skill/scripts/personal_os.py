@@ -144,22 +144,22 @@ def bootstrap(args: argparse.Namespace) -> None:
     date = parse_date(args.date).isoformat()
     week_label = parse_date(args.date).strftime("%G-W%V")
     write_new(root / "README.md", repo_readme(root.name))
-    write_new(root / "inbox.md", "# Inbox\n\n- [ ] Triage this PersonalOS demo input.\n")
-    write_new(root / "tasks" / "today.md", "# Today Tasks\n\n- [ ] Review PersonalOS structure\n")
-    write_new(root / "tasks" / "scheduled.md", "# Scheduled Tasks\n\n- [ ] Weekly review every Friday\n")
-    write_new(root / "tasks" / "archive.md", "# Archive\n\n- No archived records yet.\n")
-    write_new(root / "state" / "waiting.md", "# Waiting\n\n- [ ] Alice to confirm Q3 budget owner | Owner: Alice | Since: " + date + "\n")
-    write_new(root / "state" / "blocked.md", "# Blocked\n\n- [ ] Demo analytics dashboard blocked by missing API token | Since: " + date + " | Unblock: obtain token\n")
-    write_new(root / "state" / "habits.md", "# Habits\n\n" + render_template("habit.md", habit_name="Daily DP practice"))
-    write_new(root / "state" / "stats.md", "# Stats\n\n- Tasks completed: 0\n- Automation candidates created: 1\n")
-    write_new(root / "logs" / "execution-log.md", "# Execution Log\n\n- " + date + " Bootstrap PersonalOS repository.\n")
-    write_new(root / "projects" / "demo-project.md", render_template("project.md", project_name="Demo Project", date=date))
+    write_new(root / "inbox.md", "# 收件箱\n\n- [ ] 分拣这条 PersonalOS 示例输入。\n")
+    write_new(root / "tasks" / "today.md", "# 今日任务\n\n- [ ] 检查 PersonalOS 目录结构\n")
+    write_new(root / "tasks" / "scheduled.md", "# 定时任务\n\n- [ ] 每周五做周复盘\n")
+    write_new(root / "tasks" / "archive.md", "# 归档\n\n- 暂无归档记录。\n")
+    write_new(root / "state" / "waiting.md", "# 等待中\n\n- [ ] Alice 确认 Q3 预算负责人 | 负责人: Alice | 开始: " + date + "\n")
+    write_new(root / "state" / "blocked.md", "# 阻塞项\n\n- [ ] 示例数据看板因缺少 API token 暂停 | 开始: " + date + " | 解法: 获取 token\n")
+    write_new(root / "state" / "habits.md", "# 习惯\n\n" + render_template("habit.md", habit_name="每日动态规划练习"))
+    write_new(root / "state" / "stats.md", "# 统计\n\n- 已完成任务数: 0\n- 已创建自动化候选数: 1\n")
+    write_new(root / "logs" / "execution-log.md", "# 执行日志\n\n- " + date + " 初始化 PersonalOS 仓库。\n")
+    write_new(root / "projects" / "demo-project.md", render_template("project.md", project_name="示例项目", date=date))
     write_new(root / "tasks" / "automation-candidates.md", "# Automation Candidates\n\n" + render_template(
         "automation-candidate.md",
         date=date,
-        title="Generate Weekly Metrics Report",
-        source_task="Generate a weekly metrics summary from a CSV export.",
-        codex_prompt="Inspect the CSV export, compute week-over-week metrics, create a Markdown summary, and include validation notes.",
+        title="生成每周指标报告",
+        source_task="根据 CSV 导出生成每周指标摘要。",
+        codex_prompt="检查 CSV 导出，计算环比指标，创建 Markdown 摘要，并附上验证说明。",
     ))
     write_new(root / "dailies" / f"{date}.md", render_daily(root, parse_date(args.date)))
     write_new(root / "weekly-reviews" / f"{week_label}.md", render_weekly(root, iso_week_start(args.date)))
@@ -169,32 +169,32 @@ def bootstrap(args: argparse.Namespace) -> None:
     run(["git", "add", "."], cwd=root)
     if run(["git", "diff", "--cached", "--quiet"], cwd=root, check=False).returncode != 0:
         run(["git", "commit", "-m", "Bootstrap PersonalOS"], cwd=root)
-    print(f"Bootstrapped PersonalOS at {root}")
+    print(f"已初始化 PersonalOS: {root}")
     print_git_status(root)
 
 
 def repo_readme(name: str) -> str:
     return f"""# {name}
 
-This repository is a PersonalOS: a Git-backed Personal Chief of Staff system for daily execution, long-term projects, Waiting and Blocked tracking, automation candidates, weekly reviews, execution logs, and future habit management.
+这个仓库是一个 PersonalOS：用 Git 管理的个人执行系统，用于每日推进、长期项目、等待中/阻塞项、自动化候选、周复盘、执行日志和习惯维护。
 
-## Operating Loop
+## 运转循环
 
-1. Capture raw input in `inbox.md`.
-2. Generate or update today's Daily in `dailies/`.
-3. Route work into Today, Projects, Waiting, Blocked, Scheduled, Automation Candidates, Archive, or Habits.
-4. Mark completed work in place and log it in `logs/execution-log.md`.
-5. Review projects weekly and commit accepted changes.
+1. 把原始输入收进 `inbox.md`。
+2. 在 `dailies/` 生成或更新当天日报。
+3. 把事项路由到今日任务、项目、等待中、阻塞项、定时任务、自动化候选、归档或习惯。
+4. 在原位置标记完成，并记录到 `logs/execution-log.md`。
+5. 每周巡检项目，并提交确认后的变更。
 
-## Core Folders
+## 核心目录
 
-- `dailies/`: daily plans and reviews.
-- `weekly-reviews/`: weekly summaries.
-- `projects/`: long-term project state.
-- `tasks/`: today, scheduled, automation, and archive ledgers.
-- `state/`: waiting, blocked, habits, and stats.
-- `logs/`: execution history.
-- `templates/`: canonical Markdown templates.
+- `dailies/`: 每日计划与复盘。
+- `weekly-reviews/`: 周复盘。
+- `projects/`: 长期项目状态。
+- `tasks/`: 今日、定时、自动化候选和归档台账。
+- `state/`: 等待中、阻塞项、习惯和统计。
+- `logs/`: 执行历史。
+- `templates/`: 标准 Markdown 模板。
 """
 
 
@@ -230,28 +230,28 @@ def add_task(args: argparse.Namespace) -> None:
     elif task_type == "project":
         add_project_task(root, args.task, date)
     elif task_type == "scheduled":
-        append(root / "tasks" / "scheduled.md", f"- [ ] {args.task} | Added: {date.isoformat()}")
+        append(root / "tasks" / "scheduled.md", f"- [ ] {args.task} | 添加: {date.isoformat()}")
     elif task_type == "automation":
         add_automation_candidate(root, args.task, date)
     elif task_type == "waiting":
-        append(root / "state" / "waiting.md", f"- [ ] {args.task} | Since: {date.isoformat()}")
+        append(root / "state" / "waiting.md", f"- [ ] {args.task} | 开始: {date.isoformat()}")
     elif task_type == "blocked":
-        append(root / "state" / "blocked.md", f"- [ ] {args.task} | Since: {date.isoformat()}")
+        append(root / "state" / "blocked.md", f"- [ ] {args.task} | 开始: {date.isoformat()}")
     elif task_type == "archive":
         append(root / "tasks" / "archive.md", f"- {date.isoformat()} {args.task}")
     elif task_type == "habit":
         append(root / "state" / "habits.md", "\n" + render_template("habit.md", habit_name=args.task))
-    print(f"Added task as {task_type}: {args.task}")
+    print(f"已添加任务，类型为 {task_type}: {args.task}")
     print_diff(root)
 
 
 def add_today_task(root: Path, task: str, date: dt.date) -> None:
-    append(root / "tasks" / "today.md", f"- [ ] {task} | Added: {date.isoformat()}")
+    append(root / "tasks" / "today.md", f"- [ ] {task} | 添加: {date.isoformat()}")
     daily = root / "dailies" / f"{date.isoformat()}.md"
     if not daily.exists():
         daily.write_text(render_daily(root, date), encoding="utf-8")
-    append_under_heading(daily, "Today New Tasks", f"- [ ] {task}")
-    append_under_heading(daily, "Today Task List", f"- [ ] {task}")
+    append_under_heading(daily, "今日新增任务", f"- [ ] {task}")
+    append_under_heading(daily, "今日任务清单", f"- [ ] {task}")
 
 
 def add_project_task(root: Path, task: str, date: dt.date) -> None:
@@ -259,8 +259,8 @@ def add_project_task(root: Path, task: str, date: dt.date) -> None:
     path = root / "projects" / f"{slugify(title)}.md"
     if not path.exists():
         path.write_text(render_template("project.md", project_name=title, date=date.isoformat()), encoding="utf-8")
-    append_under_heading(path, "Next Actions", f"- [ ] {task}")
-    replace_field(path, "Last Updated", date.isoformat())
+    append_under_heading(path, "下一步行动", f"- [ ] {task}")
+    replace_field(path, "最后更新", date.isoformat())
 
 
 def add_automation_candidate(root: Path, task: str, date: dt.date) -> None:
@@ -270,10 +270,10 @@ def add_automation_candidate(root: Path, task: str, date: dt.date) -> None:
         date=date.isoformat(),
         title=title,
         source_task=task,
-        codex_prompt=f"Complete this task end-to-end: {task}. Inspect relevant files, make necessary changes, validate results, and summarize outputs.",
+        codex_prompt=f"端到端完成这个任务：{task}。检查相关文件，做必要修改，验证结果，并总结产出。",
     )
     append(root / "tasks" / "automation-candidates.md", "\n" + content)
-    increment_stat(root / "state" / "stats.md", "Automation candidates created")
+    increment_stat(root / "state" / "stats.md", "已创建自动化候选数")
 
 
 def append_under_heading(path: Path, heading: str, line: str) -> None:
@@ -314,69 +314,80 @@ def daily(args: argparse.Namespace) -> None:
     day = parse_date(args.date)
     path = root / "dailies" / f"{day.isoformat()}.md"
     if path.exists() and not args.force:
-        print(f"Daily already exists: {path}")
+        print(f"日报已存在: {path}")
     else:
         path.write_text(render_daily(root, day), encoding="utf-8")
-        print(f"Generated Daily: {path}")
+        print(f"已生成日报: {path}")
+    print("\n--- 日报会话播报正文 ---")
+    print(render_daily_announcement(path, root, day))
     print_diff(root)
 
 
 def render_daily(root: Path, day: dt.date) -> str:
     yesterday_path = root / "dailies" / f"{(day - dt.timedelta(days=1)).isoformat()}.md"
     yesterday = read(yesterday_path)
-    done = checklist_items(yesterday, checked=True) or ["No completed items recorded yet."]
-    undone = checklist_items(yesterday, checked=False) or checklist_items(read(root / "tasks" / "today.md"), checked=False) or ["No unfinished items carried over yet."]
-    waiting = checklist_items(read(root / "state" / "waiting.md"), checked=False) or bullet_lines(read(root / "state" / "waiting.md")) or ["No active waiting items."]
-    blocked = checklist_items(read(root / "state" / "blocked.md"), checked=False) or bullet_lines(read(root / "state" / "blocked.md")) or ["No active blocked items."]
+    done = checklist_items(yesterday, checked=True) or ["还没有记录已完成事项。"]
+    undone = checklist_items(yesterday, checked=False) or checklist_items(read(root / "tasks" / "today.md"), checked=False) or ["没有需要结转的未完成事项。"]
+    waiting = checklist_items(read(root / "state" / "waiting.md"), checked=False) or bullet_lines(read(root / "state" / "waiting.md")) or ["当前没有等待中事项。"]
+    blocked = checklist_items(read(root / "state" / "blocked.md"), checked=False) or bullet_lines(read(root / "state" / "blocked.md")) or ["当前没有阻塞项。"]
     projects = project_summaries(root)
     automations = checklist_items(read(root / "tasks" / "automation-candidates.md"), checked=False)
-    suggestions = ["Select one important project next action.", "Clear or route new Inbox items."]
-    if blocked and blocked[0] != "No active blocked items.":
-        suggestions.insert(0, "Unblock the highest-impact blocked item.")
-    if waiting and waiting[0] != "No active waiting items.":
-        suggestions.append("Send one concise follow-up for the oldest Waiting item.")
+    suggestions = ["选择一个最重要的项目下一步行动。", "清空或路由收件箱里的新事项。"]
+    if blocked and blocked[0] != "当前没有阻塞项。":
+        suggestions.insert(0, "先处理影响最大的阻塞项。")
+    if waiting and waiting[0] != "当前没有等待中事项。":
+        suggestions.append("给最早的等待中事项发一条简短跟进。")
     if automations:
-        suggestions.append("Run or refine one Codex automation candidate.")
-    return f"""# Daily - {day.isoformat()}
+        suggestions.append("运行或细化一个 Codex 自动化候选。")
+    return f"""# 日报 - {day.isoformat()}
 
-## Yesterday Done
+## 昨日完成
 
 {as_bullets(done)}
 
-## Yesterday Unfinished
+## 昨日未完成
 
 {as_bullets(undone)}
 
-## Waiting
+## 等待中
 
 {as_bullets(waiting)}
 
-## Blocked
+## 阻塞项
 
 {as_bullets(blocked)}
 
-## Long-Term Project Progress
+## 长期项目进展
 
-{as_bullets(projects or ["No project progress recorded yet."])}
+{as_bullets(projects or ["还没有记录项目进展。"])}
 
-## Today Suggestions
+## 今日建议
 
 {as_bullets(suggestions)}
 
-## Today Task List
+## 今日任务清单
 
-{as_checklist([item for item in undone if not item.startswith("No unfinished")]) or "- [ ] Review Inbox"}
+{as_checklist([item for item in undone if not item.startswith("没有需要结转")]) or "- [ ] 检查收件箱"}
 
-## Today New Tasks
+## 今日新增任务
 
-- None yet.
+- 暂无。
 
-## Today Review
+## 今日复盘
 
-- Wins:
-- Friction:
-- Carry forward:
+- 收获:
+- 卡点:
+- 结转:
 """
+
+
+def render_daily_announcement(path: Path, root: Path, day: dt.date) -> str:
+    content = read(path) or render_daily(root, day)
+    return (
+        f"这是 {day.isoformat()} 的中文日报，已同步写入 `{path}`。\n\n"
+        f"{content.strip()}\n\n"
+        "你可以直接在这个会话里继续追加今日任务、标记完成事项，或让我把某个自动化候选拆成可执行步骤。"
+    )
 
 
 def as_bullets(items: list[str]) -> str:
@@ -392,8 +403,10 @@ def project_summaries(root: Path) -> list[str]:
     for path in sorted((root / "projects").glob("*.md")):
         text = read(path)
         title = text.splitlines()[0].lstrip("# ").strip() if text else path.stem
-        phase = extract_section(text, "Current Phase").strip().splitlines()[0] if extract_section(text, "Current Phase").strip() else "Unknown phase"
-        progress = extract_section(text, "Progress").strip().splitlines()[0] if extract_section(text, "Progress").strip() else "Unknown progress"
+        phase_text = extract_section_any(text, ["当前阶段", "Current Phase"]).strip()
+        progress_text = extract_section_any(text, ["进展", "Progress"]).strip()
+        phase = phase_text.splitlines()[0] if phase_text else "阶段未知"
+        progress = progress_text.splitlines()[0] if progress_text else "进展未知"
         summaries.append(f"{title}: {phase}, {progress}")
     return summaries
 
@@ -401,6 +414,14 @@ def project_summaries(root: Path) -> list[str]:
 def extract_section(text: str, heading: str) -> str:
     match = re.search(rf"^## {re.escape(heading)}\n\n(.*?)(?=\n## |\Z)", text, re.M | re.S)
     return match.group(1) if match else ""
+
+
+def extract_section_any(text: str, headings: list[str]) -> str:
+    for heading in headings:
+        value = extract_section(text, heading)
+        if value:
+            return value
+    return ""
 
 
 def complete_task(args: argparse.Namespace) -> None:
@@ -427,13 +448,13 @@ def complete_task(args: argparse.Namespace) -> None:
         if count:
             path.write_text(new_text, encoding="utf-8")
             changed.append(path)
-    append(root / "logs" / "execution-log.md", f"- {day.isoformat()} Completed: {args.task}")
-    increment_stat(root / "state" / "stats.md", "Tasks completed")
-    print("Completed task match in:")
+    append(root / "logs" / "execution-log.md", f"- {day.isoformat()} 已完成: {args.task}")
+    increment_stat(root / "state" / "stats.md", "已完成任务数")
+    print("已在以下文件中标记完成:")
     for path in changed:
         print(f"- {path}")
     if not changed:
-        print("- No checkbox match found; logged completion only.")
+        print("- 没有找到匹配的未完成复选框；已仅记录完成日志。")
     print_diff(root)
 
 
@@ -459,10 +480,10 @@ def weekly_review(args: argparse.Namespace) -> None:
     content = render_weekly(root, start)
     path = root / "weekly-reviews" / f"{label}.md"
     if path.exists() and not args.force:
-        print(f"Weekly review already exists: {path}")
+        print(f"周复盘已存在: {path}")
     else:
         path.write_text(content, encoding="utf-8")
-        print(f"Generated Weekly Review {label}: {start} to {end}")
+        print(f"已生成周复盘 {label}: {start} 至 {end}")
     print_diff(root)
 
 
@@ -475,41 +496,41 @@ def render_weekly(root: Path, start: dt.date) -> str:
         completed.extend(checklist_items(text, checked=True))
         unfinished.extend(checklist_items(text, checked=False))
     label = start.strftime("%G-W%V")
-    waiting = checklist_items(read(root / "state" / "waiting.md"), checked=False) or ["No active waiting items."]
-    blocked = checklist_items(read(root / "state" / "blocked.md"), checked=False) or ["No active blocked items."]
-    projects = project_summaries(root) or ["No project progress recorded yet."]
+    waiting = checklist_items(read(root / "state" / "waiting.md"), checked=False) or ["当前没有等待中事项。"]
+    blocked = checklist_items(read(root / "state" / "blocked.md"), checked=False) or ["当前没有阻塞项。"]
+    projects = project_summaries(root) or ["还没有记录项目进展。"]
     automation_count = len(re.findall(r"^## \d{4}-\d{2}-\d{2}", read(root / "tasks" / "automation-candidates.md"), re.M))
-    return f"""# Weekly Review - {label}
+    return f"""# 周复盘 - {label}
 
-## This Week Completed
+## 本周完成
 
-{as_bullets(completed or ["No completed items recorded yet."])}
+{as_bullets(completed or ["还没有记录已完成事项。"])}
 
-## This Week Unfinished
+## 本周未完成
 
-{as_bullets(unfinished or ["No unfinished items recorded yet."])}
+{as_bullets(unfinished or ["还没有记录未完成事项。"])}
 
-## Waiting Summary
+## 等待中汇总
 
 {as_bullets(waiting)}
 
-## Blocked Summary
+## 阻塞项汇总
 
 {as_bullets(blocked)}
 
-## Project Progress
+## 项目进展
 
 {as_bullets(projects)}
 
-## Automation Benefit
+## 自动化收益
 
-- Automation candidates in backlog: {automation_count}
+- 当前自动化候选数: {automation_count}
 
-## Next Week Suggestions
+## 下周建议
 
-- Close or re-negotiate the oldest Waiting item.
-- Pick one blocked item and define an unblock action.
-- Move one project forward with a visible artifact.
+- 关闭或重新约定最早的等待中事项。
+- 选择一个阻塞项，并定义清晰的解阻动作。
+- 推进一个项目，产出一个可见成果。
 """
 
 
@@ -521,23 +542,23 @@ def project_review(args: argparse.Namespace) -> None:
     for path in sorted((root / "projects").glob("*.md")):
         text = read(path)
         title = text.splitlines()[0].lstrip("# ").strip() if text else path.stem
-        last_raw = extract_section(text, "Last Updated").strip().splitlines()
+        last_raw = extract_section_any(text, ["最后更新", "Last Updated"]).strip().splitlines()
         last_date = parse_date(last_raw[0]) if last_raw else None
-        next_actions = checklist_items(extract_section(text, "Next Actions"), checked=False)
-        waiting = extract_section(text, "Waiting").lower()
-        blocked = extract_section(text, "Blocked").lower()
+        next_actions = checklist_items(extract_section_any(text, ["下一步行动", "Next Actions"]), checked=False)
+        waiting = extract_section_any(text, ["等待中", "Waiting"]).lower()
+        blocked = extract_section_any(text, ["阻塞项", "Blocked"]).lower()
         risks = []
         if last_date and (now - last_date).days > 14:
-            risks.append("stale")
+            risks.append("停滞")
         if not next_actions:
-            risks.append("stalled")
-        if "none" not in blocked or "blocked" in text.lower() or "risk" in text.lower():
-            risks.append("risk")
-        if "none" not in waiting and waiting.strip():
-            risks.append("waiting")
-        suggestion = "Define one next action and update Last Updated." if risks else "Healthy; keep momentum."
-        rows.append((title, ", ".join(sorted(set(risks))) or "healthy", suggestion))
-    print("# Project Review")
+            risks.append("缺少下一步")
+        if ("none" not in blocked and "无" not in blocked) or "blocked" in text.lower() or "risk" in text.lower() or "风险" in text:
+            risks.append("有风险")
+        if "none" not in waiting and "无" not in waiting and waiting.strip():
+            risks.append("等待中")
+        suggestion = "定义一个下一步行动，并更新最后更新时间。" if risks else "状态健康，保持推进。"
+        rows.append((title, ", ".join(sorted(set(risks))) or "健康", suggestion))
+    print("# 项目巡检")
     for title, status, suggestion in rows:
         print(f"- {title}: {status}. {suggestion}")
 
@@ -555,7 +576,7 @@ def print_diff(root: Path) -> None:
     print(run(["git", "diff", "--stat"], cwd=root, check=False).stdout.rstrip() or "(no diff)")
     print("\n--- git diff ---")
     print(run(["git", "diff"], cwd=root, check=False).stdout.rstrip() or "(no diff)")
-    print("\nSuggested commit:")
+    print("\n建议提交:")
     print("git add . && git commit -m \"Update PersonalOS\"")
 
 

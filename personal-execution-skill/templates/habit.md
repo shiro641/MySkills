@@ -1,10 +1,10 @@
 ## {{habit_name}}
 
-- Frequency:
-- Auto Include In Daily: false
-- Current Streak: 0
-- Completion Rate: 0%
+- 频率:
+- 自动加入日报: false
+- 当前连续天数: 0
+- 完成率: 0%
 
-### Completion Log
+### 完成记录
 
-- No completions recorded yet.
+- 还没有记录完成情况。

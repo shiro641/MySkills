@@ -1,33 +1,33 @@
 # {{project_name}}
 
-## Goal
+## 目标
 
-Describe the outcome this project exists to create.
+描述这个项目要创造的结果。
 
-## Current Phase
+## 当前阶段
 
-Discovery
+探索
 
-## Next Actions
+## 下一步行动
 
-- [ ] Define the next concrete action.
+- [ ] 定义下一个具体行动。
 
-## Progress
+## 进展
 
 0%
 
-## Last Updated
+## 最后更新
 
 {{date}}
 
-## Waiting
+## 等待中
 
-- None.
+- 无。
 
-## Blocked
+## 阻塞项
 
-- None.
+- 无。
 
-## Review Notes
+## 复盘笔记
 
-- Created on {{date}}.
+- 创建于 {{date}}。

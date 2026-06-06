@@ -1,5 +1,7 @@
 # PersonalOS Workflows
 
+默认用中文生成新的日报、周复盘、项目记录、自动化候选和面向用户的总结。
+
 ## File Modification Principles
 
 - Read before write.
@@ -26,15 +28,15 @@ A task is a strong automation candidate when it can be completed by Codex using 
 Automation records must include:
 
 - Codex Prompt
-- Execution Steps
-- Expected Artifacts
-- Acceptance Criteria
+- 执行步骤
+- 预期产物
+- 验收标准
 
 ## Project Review Heuristics
 
-- Stale: `Last Updated` is more than 14 days old.
-- Stalled: no open next actions or progress says blocked/stalled.
-- Risky: contains blocked items, waiting dependencies, overdue language, or high uncertainty.
+- 停滞: `最后更新` 超过 14 天。
+- 缺少下一步: 没有开放的下一步行动，或进展显示阻塞/停顿。
+- 有风险: 包含阻塞项、等待依赖、逾期表达或高不确定性。
 
 ## Weekly Review Sources
 
@@ -46,3 +48,12 @@ Read all Daily files in the ISO week, then summarize:
 - project changes
 - automation candidates added or completed
 - next-week suggestions
+
+## Daily Thread Announcement
+
+Every Daily generation has two outputs:
+
+- A Markdown file at `dailies/YYYY-MM-DD.md`.
+- A separate Codex chat thread in the current project where the Daily is delivered to the user in Chinese.
+
+Use the script output section headed `--- 日报会话播报正文 ---` as the initial prompt for the new thread. If that section is unavailable, read the generated Daily file and send its contents with a short Chinese opening line. Title the thread `日报 YYYY-MM-DD` when thread-title tools are available.
