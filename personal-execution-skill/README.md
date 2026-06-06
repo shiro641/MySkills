@@ -63,6 +63,7 @@ See `SKILL.md` and `references/schema.md` for the canonical structure and file s
 - The Skill follows Intent First classification. If a user explicitly names a task type, that type wins.
 - If a user says "调用 add task", "作为 habit", "作为惯例", or "完成时更新状态", use this skill's script workflow directly; these are not MCP tool names.
 - Bootstrap records the user's default PersonalOS path in `state/config.json`; this runtime config should not be committed.
+- Daily generation should run `scripts/personal_os.py daily`; do not hand-write a Daily or invent generic time-block advice.
 - Automation candidates are not added to manual todos. They are routed to `tasks/automation-candidates.md` with prompt, steps, expected artifacts, and acceptance criteria.
 - Daily generation creates `dailies/YYYY-MM-DD.md` and should also create a new Codex project thread titled `日报 YYYY-MM-DD`.
 - After each update, inspect `git diff` and make a commit when the change is accepted.

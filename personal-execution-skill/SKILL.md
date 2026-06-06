@@ -47,6 +47,8 @@ python3 <skill_dir>/scripts/personal_os.py project-review
 
 Bootstrap records the user's PersonalOS repository path in the skill config at `<skill_dir>/state/config.json`. After bootstrap, later commands may omit `<target_repo>` and will use the recorded default repository. If the user has multiple PersonalOS repositories, pass the repository path explicitly.
 
+For all core operations, especially `daily`, run the bundled script instead of manually drafting Markdown. Manual generation may invent generic productivity advice or time blocks that are not present in the user's PersonalOS data.
+
 Read `references/workflows.md` before manually editing repository content or when a user asks for nuanced classification. Read `references/schema.md` when creating or repairing files.
 
 When generating a Daily, also create a new Codex chat thread in the current project and send the generated Daily to the user in that new thread. Use the Codex thread tools (`create_thread`, and `set_thread_title` when available). The script prints a `--- 日报会话播报正文 ---` section; use that exact section as the new thread's initial prompt whenever possible.
@@ -122,6 +124,7 @@ PersonalOS/
 8. At key points, suggest a commit. For bootstrap, create the initial commit automatically.
 9. Prefer Chinese for generated content and user-facing summaries. Preserve existing user-authored language when editing old files unless the operation is regenerating a template/report.
 10. For every `generate_daily` operation, after the Markdown file is created or found, create a separate chat thread under the current project and deliver the Daily there.
+11. Never hand-write a Daily from scratch. Always run `scripts/personal_os.py daily`. Do not invent "today's most important output", "60 to 90 minute execution blocks", calendar assumptions, risks, meetings, or task items unless they come from PersonalOS files or the script output.
 
 ## Intent First Task Types
 
@@ -174,12 +177,13 @@ The command validates that the target has the PersonalOS structure, then writes 
 
 ### generate_daily
 
-1. Read yesterday's Daily if present.
-2. Read `tasks/today.md`, `projects/*.md`, `state/waiting.md`, `state/blocked.md`, `inbox.md`, and `tasks/automation-candidates.md`.
-3. Generate `dailies/YYYY-MM-DD.md` in Chinese with: yesterday done, yesterday unfinished, Waiting, Blocked, project progress, today's suggestions, task checklist, new tasks, and review.
-4. Capture the script's `--- 日报会话播报正文 ---` section or read the generated Daily file and compose a concise Chinese announcement.
-5. Create a new Codex thread in the current project, using the local project environment, with the announcement as the initial prompt. Title it `日报 YYYY-MM-DD` when a thread-title tool is available.
-6. Show diff and suggest commit.
+1. Run `python3 <skill_dir>/scripts/personal_os.py daily --date YYYY-MM-DD` unless the user explicitly provides a different repository path.
+2. Do not manually create or rewrite the Daily file before running the script.
+3. Capture the script's `--- 日报会话播报正文 ---` section or read the generated Daily file and compose a concise Chinese announcement.
+4. Create a new Codex thread in the current project, using the local project environment, with the announcement as the initial prompt. Title it `日报 YYYY-MM-DD` when thread-title tools are available.
+5. Show diff and suggest commit.
+
+The Daily content must stay grounded in PersonalOS files and script output. Avoid generic coaching phrases such as "今日重点是先定义今天唯一最重要的产出" or "安排一个 60 到 90 分钟的启动执行块" unless those exact ideas are already present in the user's files.
 
 ### add_task
 
