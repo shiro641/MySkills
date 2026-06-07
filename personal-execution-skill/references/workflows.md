@@ -44,6 +44,22 @@ Automation records must include:
 - 缺少下一步: 没有开放的下一步行动，或进展显示阻塞/停顿。
 - 有风险: 包含阻塞项、等待依赖、逾期表达或高不确定性。
 
+## Learning Capture
+
+When a user completes a Today, Scheduled, or Habit task and includes phrasing such as `收获为...`, `学到了...`, `今天我学到了...`, or `learned...`, use `complete-task` with the full completion text or pass `--learning`. The script records the insight in `logs/execution-log.md` and today's Daily `今日复盘 -> 收获`.
+
+For project progress updates, use `update-project`. It extracts progress, milestones, and learning from text like `当前进度50%，目前已完成xxx，收获为xxx`, updates the project record, and appends the learning to today's Daily.
+
+## Project Decomposition And Sync
+
+For new long-term tasks/projects, automatically show a proposed subtask checklist before writing it. When `add-task` creates or updates a Project, it must immediately run the `plan-project` draft flow without `--confirm` and include that checklist in the response. Run `plan-project --confirm` only after the user accepts the checklist.
+
+Confirmed project subtasks are written to the project `子任务清单` and to `tasks/scheduled.md` with `项目:` and `子任务:` metadata. Later `update-task` and confirmed `remove-task` operations use that metadata to keep the project checklist synchronized with scheduled task changes.
+
+## Task Updates And Type Flow
+
+Use `update-task` to modify content, type, or dates. If a Today task receives a future due date, it becomes Scheduled. If a Scheduled task is due today, Daily generation promotes it into Today tasks so it appears in the Daily.
+
 ## Weekly Review Sources
 
 Read all Daily files in the ISO week, then summarize:

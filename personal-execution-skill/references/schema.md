@@ -42,9 +42,11 @@ All newly generated user-facing Markdown content should be written in Chinese by
 - 当前阶段
 - 下一步行动
 - 进展
+- 里程碑
 - 最后更新
 - 等待中
 - 阻塞项
+- 子任务清单
 - 复盘笔记
 
 ## Automation Candidate Required Fields

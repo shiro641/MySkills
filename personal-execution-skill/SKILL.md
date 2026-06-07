@@ -2,7 +2,8 @@
 name: personal-execution-skill
 description: 
     Use this skill to manage a Git-backed Personal OS for planning and execution.
-    Trigger when the user wants to create or update schedules, plans, tasks, habits, projects, reviews, execution logs, or automation workflows.
+    Trigger when the user wants to create or update schedules, plans, tasks, habits, projects, project subtasks, project progress, milestones, daily reviews, learnings/insights, execution logs, or automation workflows.
+    Also trigger when the user asks to split a long-term project, confirm a project checklist, update task content/type/time, complete a task with learnings, or sync project subtasks with scheduled tasks.
 ---
 
 # Personal Execution Skill
@@ -43,9 +44,13 @@ python3 <skill_dir>/scripts/personal_os.py set-repo <target_repo>
 python3 <skill_dir>/scripts/personal_os.py daily --date YYYY-MM-DD
 python3 <skill_dir>/scripts/personal_os.py add-task "task text" --type today
 python3 <skill_dir>/scripts/personal_os.py add-task "task text" --type habit
-python3 <skill_dir>/scripts/personal_os.py complete-task "task text" --date YYYY-MM-DD
+python3 <skill_dir>/scripts/personal_os.py complete-task "task text，收获为xxx" --date YYYY-MM-DD
+python3 <skill_dir>/scripts/personal_os.py update-task "old task text" --new-task "new task text" --type scheduled --due-date YYYY-MM-DD
 python3 <skill_dir>/scripts/personal_os.py remove-task "task text" --date YYYY-MM-DD
 python3 <skill_dir>/scripts/personal_os.py remove-task "task text" --date YYYY-MM-DD --confirm 1
+python3 <skill_dir>/scripts/personal_os.py update-project "project name" "当前进度50%，目前已完成xxx，收获为xxx" --date YYYY-MM-DD
+python3 <skill_dir>/scripts/personal_os.py plan-project "project name" --date YYYY-MM-DD
+python3 <skill_dir>/scripts/personal_os.py plan-project "project name" --date YYYY-MM-DD --confirm
 python3 <skill_dir>/scripts/personal_os.py weekly-review --week-start YYYY-MM-DD
 python3 <skill_dir>/scripts/personal_os.py project-review
 ```
@@ -81,7 +86,10 @@ Use this skill when the user asks to:
 - `add_task`: "add task", "新增任务", "记一条 Waiting", "加入长期项目", "加入自动化候选"
 - `add_habit`: "作为 habit", "作为惯例", "作为习惯", "后续告诉你完成时更新状态", "每天/每周带入"
 - `complete_task`: "complete task", "完成任务", "mark done", "把 X 标记完成", "我完成了 X", "更新这个任务的状态"
+- `update_task`: "更新任务", "修改任务", "把任务改成", "改截止日期", "改成 schedule/today/habit/project"
 - `remove_task`: "remove task", "删除任务", "移除任务", "把 X 从任务里删掉"
+- `update_project`: "更新项目进度", "当前进度", "目前已完成", "项目收获", "里程碑"
+- `plan_project`: "拆分长期任务", "拆分项目", "长期任务清单", "子任务", "确认项目清单"
 - `generate_weekly_review`: "weekly review", "周复盘", "生成本周总结"
 - `project_review`: "review projects", "项目巡检", "哪些项目停滞/有风险"
 - `automation_detector`: "能不能交给 Codex", "适合自动化吗", "automation candidate"
@@ -199,7 +207,9 @@ The Daily content must stay grounded in PersonalOS files and script output. Avoi
 2. If no explicit type exists, classify using the automatic rules.
 3. If automation candidate, write the automation record and do not add to manual todos.
 4. Otherwise append to the correct file and today's Daily when applicable.
-5. Show diff and suggest commit.
+5. For Project tasks, create/update the project and automatically run the `plan-project` draft flow immediately. Show the proposed subtask plan to the user for confirmation. Do not write the subtask checklist or scheduled tasks until the user confirms and you run `plan-project --confirm`.
+6. The `plan-project` draft should default to a confirmable checklist with concrete actions, due dates, and acceptance criteria. Avoid abstract phase-only skeletons unless they also name the specific action and deliverable.
+7. Show diff and suggest commit.
 
 For phrasing like "调用 add task，将这个单词的学习作为 habit，后续我告诉你我完成了的时候，你同时帮我更新一下我这个任务的状态", classify it as an explicit Habit request and run:
 
@@ -220,9 +230,59 @@ python3 <skill_dir>/scripts/personal_os.py add-task "这个单词的学习" --ty
 1. Read today's Daily and likely source files.
 2. Mark matching open checkbox complete.
 3. Update related project, Waiting, or Blocked status when a match exists.
-4. Append `logs/execution-log.md`.
-5. Update `state/stats.md` when possible.
-6. Show diff and suggest commit.
+4. If the completion message includes learning language such as `收获为...`, `学到了...`, `今天我学到了...`, or `learned...`, extract the concrete learning.
+5. Append `logs/execution-log.md`; include the extracted learning when present.
+6. Append the extracted learning under today's Daily `今日复盘 -> 收获`.
+7. Update `state/stats.md` when possible.
+8. Show diff and suggest commit.
+
+### update_task
+
+Use this workflow when the user wants to change task content, type, or time.
+
+```bash
+python3 <skill_dir>/scripts/personal_os.py update-task "old task text" --new-task "new task text" --type scheduled --due-date YYYY-MM-DD
+```
+
+- Changing a Today task to a future due date moves it to `tasks/scheduled.md`.
+- Changing a Scheduled task to today's date also adds it to `tasks/today.md` so Daily generation can surface it.
+- Daily generation also promotes scheduled tasks whose due date is today into `tasks/today.md`.
+- When a Scheduled task is linked to a project subtask (`项目:` and `子任务:` metadata), updates or removals sync the project `子任务清单`.
+
+### update_project
+
+Use this workflow when the user reports project progress, milestones, or learnings:
+
+```bash
+python3 <skill_dir>/scripts/personal_os.py update-project "project name" "当前进度50%，目前已完成xxx，收获为xxx" --date YYYY-MM-DD
+```
+
+The script updates the project `进展`, appends dated `里程碑` and `复盘笔记`, refreshes `最后更新`, and writes extracted learning into today's Daily `今日复盘 -> 收获`.
+
+### plan_project
+
+Use this workflow for long-term project/task decomposition.
+
+When `add-task` creates or updates a Project, it must automatically execute this draft step right away. Treat the draft checklist as part of the project creation response, not as a separate optional follow-up.
+
+1. Draft first, without writing:
+
+```bash
+python3 <skill_dir>/scripts/personal_os.py plan-project "project name" --date YYYY-MM-DD
+```
+
+2. Send the checklist to the user for confirmation or modification. The default checklist should be concrete enough that the user can directly confirm it:
+   - each item should be a task someone can start immediately
+   - each item should include a due date
+   - each item should include a clear acceptance criterion
+   - when the project type is inferable from the title, prefer a domain-relevant breakdown over a generic stage skeleton
+3. After the user confirms, write the checklist into the project and add each subtask to `tasks/scheduled.md`:
+
+```bash
+python3 <skill_dir>/scripts/personal_os.py plan-project "project name" --date YYYY-MM-DD --confirm
+```
+
+Each generated scheduled subtask carries `项目:` and `子任务:` metadata so later `update-task` or confirmed `remove-task` operations can synchronize the project checklist.
 
 ### remove_task
 

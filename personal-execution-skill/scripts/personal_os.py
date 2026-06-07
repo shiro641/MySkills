@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """PersonalOS helper for personal-execution-skill."""
 
-from __future__ import annotations
-
 import argparse
 import datetime as dt
 import json
@@ -13,6 +11,8 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
+from typing import Union
 
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
@@ -28,6 +28,14 @@ class RemoveCandidate:
     text: str
     start_line: int
     end_line: int
+
+
+@dataclass(frozen=True)
+class ProjectPlanItem:
+    title: str
+    due_date: dt.date
+    action: str
+    acceptance: str
 
 DIRS = [
     "dailies",
@@ -68,13 +76,13 @@ def today() -> dt.date:
     return dt.date.today()
 
 
-def parse_date(value: str | None) -> dt.date:
+def parse_date(value: Optional[str]) -> dt.date:
     if not value:
         return today()
     return dt.date.fromisoformat(value)
 
 
-def iso_week_start(value: str | None) -> dt.date:
+def iso_week_start(value: Optional[str]) -> dt.date:
     if value:
         day = dt.date.fromisoformat(value)
     else:
@@ -87,7 +95,7 @@ def slugify(text: str) -> str:
     return slug[:80] or "untitled"
 
 
-def run(cmd: list[str], cwd: Path | None = None, check: bool = True) -> subprocess.CompletedProcess[str]:
+def run(cmd: list[str], cwd: Optional[Path] = None, check: bool = True) -> subprocess.CompletedProcess[str]:
     return subprocess.run(cmd, cwd=cwd, text=True, capture_output=True, check=check)
 
 
@@ -115,7 +123,7 @@ def set_default_repo(root: Path) -> None:
     write_config(config)
 
 
-def resolve_repo(repo: str | None) -> Path:
+def resolve_repo(repo: Optional[str]) -> Path:
     if repo:
         root = Path(repo).expanduser().resolve()
     else:
@@ -170,7 +178,7 @@ def render_template(name: str, **values: str) -> str:
     return text
 
 
-def checklist_items(text: str, checked: bool | None = None) -> list[str]:
+def checklist_items(text: str, checked: Optional[bool] = None) -> list[str]:
     items: list[str] = []
     for line in text.splitlines():
         match = re.match(r"^\s*-\s+\[([ xX])\]\s+(.*)$", line)
@@ -240,6 +248,123 @@ def normalize_match_text(value: str) -> str:
     value = re.sub(r"\|.*$", "", value)
     value = re.sub(r"\s+", " ", value.strip().lower())
     return value
+
+
+def strip_task_metadata(value: str) -> str:
+    value = re.sub(r"\s*\|\s*.*$", "", value).strip()
+    value = re.sub(r"^\s*-\s+\[[ xX]\]\s+", "", value).strip()
+    return value
+
+
+def extract_learning(text: str, explicit_learning: Optional[str] = None) -> str:
+    if explicit_learning:
+        return explicit_learning.strip()
+    patterns = [
+        r"(?:收获(?:为|是|到|到了)|学到(?:了)?|学会(?:了)?|learned)\s*[：:，,]?\s*(.+)",
+        r"(?:这次任务中|今天|本次)\s*(?:我)?(?:学到了|收获到了|收获了)\s*(.+)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, re.I)
+        if match:
+            value = match.group(1).strip()
+            value = re.split(r"(?:，|。|\n)\s*(?:卡点|结转|下次|目前进度|当前进度)", value, maxsplit=1)[0].strip()
+            return value.rstrip("。；;")
+    return ""
+
+
+def strip_learning_clause(text: str) -> str:
+    markers = [
+        "这次任务中我学到了",
+        "这次任务中学到了",
+        "今天我学到了",
+        "今天学到了",
+        "收获到了",
+        "收获为",
+        "收获是",
+        "收获:",
+        "收获：",
+        "学到了",
+        "learned",
+    ]
+    lowered = text.lower()
+    indexes = [lowered.find(marker.lower()) for marker in markers if lowered.find(marker.lower()) >= 0]
+    if not indexes:
+        return text.strip()
+    cut = min(indexes)
+    return re.sub(r"[，,；;。:\s]+$", "", text[:cut]).strip()
+
+
+def extract_progress(text: str, explicit_progress: Optional[str] = None) -> str:
+    if explicit_progress:
+        return explicit_progress.strip()
+    match = re.search(r"(?:当前进度|进度|progress)\s*[：:为是]?\s*([0-9]{1,3}%|[0-9]{1,3}\s*percent)", text, re.I)
+    return match.group(1).replace(" ", "") if match else ""
+
+
+def extract_milestone(text: str, explicit_milestone: Optional[str] = None) -> str:
+    if explicit_milestone:
+        return explicit_milestone.strip()
+    match = re.search(r"(?:目前已完成|已完成|当前完成|milestone)\s*[：:为是]?\s*(.+)", text, re.I)
+    if not match:
+        return ""
+    value = match.group(1).strip()
+    value = re.split(r"(?:，|。|\n)\s*(?:收获|学到|当前进度|进度|卡点|阻塞)", value, maxsplit=1)[0].strip()
+    return value.rstrip("。；;")
+
+
+def append_unique_line(path: Path, line: str) -> None:
+    text = read(path)
+    if line.strip() in {existing.strip() for existing in text.splitlines()}:
+        return
+    append(path, line)
+
+
+def ensure_daily(root: Path, day: dt.date) -> Path:
+    path = root / "dailies" / f"{day.isoformat()}.md"
+    if not path.exists():
+        path.write_text(render_daily(root, day), encoding="utf-8")
+    return path
+
+
+def append_daily_learning(root: Path, day: dt.date, learning: str, source: str) -> None:
+    learning = learning.strip()
+    if not learning:
+        return
+    path = ensure_daily(root, day)
+    line = f"  - [{source}] {learning}"
+    text = read(path)
+    if line.strip() in {existing.strip() for existing in text.splitlines()}:
+        return
+    pattern = re.compile(r"(^-\s*收获:\s*$)", re.M)
+    if pattern.search(text):
+        text = pattern.sub(rf"\1\n{line}", text, count=1)
+        path.write_text(text, encoding="utf-8")
+    else:
+        append_under_heading(path, "今日复盘", f"- 收获:\n{line}")
+
+
+def first_date_in_text(text: str) -> Optional[dt.date]:
+    match = re.search(r"\d{4}-\d{2}-\d{2}", text)
+    if not match:
+        return None
+    try:
+        return dt.date.fromisoformat(match.group(0))
+    except ValueError:
+        return None
+
+
+def task_due_date(text: str) -> Optional[dt.date]:
+    return first_date_in_text(text)
+
+
+def project_ref_from_line(line: str) -> str:
+    match = re.search(r"\|\s*项目:\s*([^|]+)", line)
+    return match.group(1).strip() if match else ""
+
+
+def task_id_from_line(line: str) -> str:
+    match = re.search(r"\|\s*子任务:\s*([^|]+)", line)
+    return match.group(1).strip() if match else ""
 
 
 def completion_dates(text: str) -> list[dt.date]:
@@ -330,7 +455,7 @@ def habit_completion_rate(dates: list[dt.date], frequency: str) -> str:
     return f"{round(done / max(total, 1) * 100)}%"
 
 
-def replace_bullet_field(text: str, label: str, value: str, before_heading: str | None = None) -> str:
+def replace_bullet_field(text: str, label: str, value: str, before_heading: Optional[str] = None) -> str:
     pattern = re.compile(rf"^-\s*{re.escape(label)}:\s*.*$", re.M)
     line = f"- {label}: {value}"
     if pattern.search(text):
@@ -371,7 +496,7 @@ def refresh_habit_metrics(body: str) -> str:
     return body
 
 
-def complete_habit(root: Path, task: str, day: dt.date) -> tuple[Path | None, bool, bool]:
+def complete_habit(root: Path, task: str, day: dt.date) -> tuple[Optional[Path], bool, bool]:
     path = root / "state" / "habits.md"
     text = read(path)
     if not text:
@@ -393,7 +518,7 @@ def refresh_habit_stats(root: Path) -> None:
     blocks = habit_blocks(habits_text)
     auto_count = 0
     completion_count = 0
-    latest: dt.date | None = None
+    latest: Optional[dt.date] = None
     for match, _title, _name in blocks:
         body = match.group(2)
         auto_match = re.search(r"^-\s*自动加入日报:\s*(.+?)\s*$", body, re.M)
@@ -486,7 +611,7 @@ def repo_readme(name: str) -> str:
 """
 
 
-def classify_task(text: str, explicit_type: str | None = None) -> str:
+def classify_task(text: str, explicit_type: Optional[str] = None) -> str:
     if explicit_type:
         key = explicit_type.strip().lower()
         if key in TASK_TYPE_ALIASES:
@@ -518,6 +643,9 @@ def add_task(args: argparse.Namespace) -> None:
         add_today_task(root, task, date)
     elif task_type == "project":
         add_project_task(root, task, date)
+        print_project_plan(task, build_project_plan(task, date, None))
+        print("\n项目子任务清单尚未写入。确认无误后运行:")
+        print(f"python3 {Path(__file__).resolve()} plan-project {quote_arg(task)} --date {date.isoformat()} --confirm")
     elif task_type == "scheduled":
         append(root / "tasks" / "scheduled.md", f"- [ ] {task} | 添加: {date.isoformat()}")
     elif task_type == "automation":
@@ -553,6 +681,306 @@ def add_project_task(root: Path, task: str, date: dt.date) -> None:
     replace_field(path, "最后更新", date.isoformat())
 
 
+def find_project_path(root: Path, project: str) -> Path:
+    wanted_slug = slugify(project)
+    direct = root / "projects" / f"{wanted_slug}.md"
+    if direct.exists():
+        return direct
+    for path in sorted((root / "projects").glob("*.md")):
+        text = read(path)
+        title = text.splitlines()[0].lstrip("# ").strip() if text else path.stem
+        if matches_task_name(title, project) or matches_task_name(path.stem, wanted_slug):
+            return path
+    return direct
+
+
+def ensure_project(root: Path, project: str, date: dt.date) -> Path:
+    path = find_project_path(root, project)
+    if not path.exists():
+        path.write_text(render_template("project.md", project_name=project.strip(), date=date.isoformat()), encoding="utf-8")
+    return path
+
+
+def update_project(args: argparse.Namespace) -> None:
+    root = resolve_repo(args.repo)
+    day = parse_date(args.date)
+    update_text = args.update or ""
+    path = ensure_project(root, args.project, day)
+    progress = extract_progress(update_text, args.progress)
+    milestone = extract_milestone(update_text, args.milestone)
+    learning = extract_learning(update_text, args.learning)
+    if progress:
+        replace_field(path, "进展", progress)
+    if milestone:
+        remove_section_placeholders(path, "里程碑")
+        append_under_heading(path, "里程碑", f"- {day.isoformat()} {milestone}")
+        append_under_heading(path, "复盘笔记", f"- {day.isoformat()} 当前进展: {milestone}")
+    if learning:
+        append_under_heading(path, "复盘笔记", f"- {day.isoformat()} 收获: {learning}")
+        append_daily_learning(root, day, learning, f"项目: {project_title(path)}")
+    replace_field(path, "最后更新", day.isoformat())
+    print(f"已更新项目: {path}")
+    print_diff(root)
+
+
+def project_title(path: Path) -> str:
+    text = read(path)
+    return text.splitlines()[0].lstrip("# ").strip() if text else path.stem
+
+
+def plan_project(args: argparse.Namespace) -> None:
+    root = resolve_repo(args.repo)
+    start = parse_date(args.date)
+    project = args.project.strip()
+    items = build_project_plan(project, start, args.deadline)
+    print_project_plan(project, items)
+    if not args.confirm:
+        print("\n尚未写入 PersonalOS。确认无误后运行:")
+        print(
+            f"python3 {Path(__file__).resolve()} plan-project {quote_arg(project)} "
+            f"--date {start.isoformat()} --confirm"
+        )
+        return
+    path = ensure_project(root, project, start)
+    ensure_project_plan_section(path)
+    remove_section_placeholders(path, "子任务清单")
+    for index, item in enumerate(items, start=1):
+        task_id = f"{slugify(project)}-{index}"
+        checklist = (
+            f"- [ ] {item.title} | 截止: {item.due_date.isoformat()} | "
+            f"验收: {item.acceptance} | 子任务: {task_id}"
+        )
+        append_under_heading(path, "子任务清单", checklist)
+        schedule_line = (
+            f"- [ ] {item.title} | 截止: {item.due_date.isoformat()} | "
+            f"项目: {project_title(path)} | 子任务: {task_id}"
+        )
+        append_unique_line(root / "tasks" / "scheduled.md", schedule_line)
+    replace_field(path, "最后更新", start.isoformat())
+    seed_next_actions_from_plan(path, items)
+    seed_milestones_from_plan(path, items)
+    print(f"已写入项目拆分并同步到定时任务: {path}")
+    print_diff(root)
+
+
+def build_project_plan(project: str, start: dt.date, deadline: Optional[str]) -> list[ProjectPlanItem]:
+    end = parse_date(deadline) if deadline else start + dt.timedelta(days=28)
+    if end <= start:
+        end = start + dt.timedelta(days=28)
+    return build_actionable_project_plan(project, start, end)
+
+
+def build_actionable_project_plan(project: str, start: dt.date, end: dt.date) -> list[ProjectPlanItem]:
+    lowered = project.lower()
+    if any(keyword in project for keyword in ["阅读", "源码", "代码"]) or any(
+        keyword in lowered for keyword in ["code", "cli", "sdk", "repo"]
+    ):
+        return build_code_reading_plan(project, start, end)
+    if any(keyword in project for keyword in ["vpn", "代理"]) or "proxy" in lowered:
+        return build_vpn_plan(project, start, end)
+    return build_generic_actionable_plan(project, start, end)
+
+
+def distribute_due_dates(start: dt.date, end: dt.date, steps: int, minimum_days: int = 1) -> list[dt.date]:
+    if steps <= 0:
+        return []
+    span = max((end - start).days, steps * minimum_days)
+    due_dates: list[dt.date] = []
+    previous_offset = 0
+    for index in range(steps):
+        raw_offset = round(span * (index + 1) / steps)
+        offset = max(previous_offset + minimum_days, raw_offset)
+        previous_offset = offset
+        due_dates.append(start + dt.timedelta(days=offset))
+    return due_dates
+
+
+def build_code_reading_plan(project: str, start: dt.date, end: dt.date) -> list[ProjectPlanItem]:
+    due_dates = distribute_due_dates(start, end, 6)
+    definitions = [
+        (
+            f"{project} - 明确阅读目标与范围",
+            "写清这次阅读要回答的 2 个核心问题，并补一段不少于 5 行的范围说明，明确这轮先不看什么。",
+            "形成一段可复用的目标说明，至少包含阅读目标、阅读范围和暂不覆盖内容。",
+        ),
+        (
+            f"{project} - 找到程序入口与主调用链",
+            "定位 CLI 启动入口、参数解析位置和命令注册位置，串出主调用链。",
+            "整理出一条“启动入口 -> 命令分发 -> 执行模块”的文件路径链路。",
+        ),
+        (
+            f"{project} - 梳理核心模块职责",
+            "阅读核心目录，记录最重要的 5 到 8 个模块分别负责什么。",
+            "形成一份模块职责清单，每个模块至少有一句用途说明。",
+        ),
+        (
+            f"{project} - 深挖一个关键执行流程",
+            "从“用户输入进入执行 / tool call 调度 / 线程状态组织”中选 1 个流程读透并写步骤说明。",
+            "写出至少包含 5 个关键节点的流程说明，能讲清输入、分发、执行和结果回传。",
+        ),
+        (
+            f"{project} - 做一次最小验证",
+            "针对上一步的理解，实际跑一次相关命令、日志或调用链验证自己的判断。",
+            "写下“原本理解 / 实际观察 / 修正后的理解”三段验证记录。",
+        ),
+        (
+            f"{project} - 输出第一版阅读总结",
+            "把零散笔记整理成一份可复用说明，沉淀目标、模块图、关键流程和未解问题。",
+            "形成一篇阅读笔记 v1，至少包含目标、模块职责、关键流程、验证结果和未解问题五部分。",
+        ),
+    ]
+    return [
+        ProjectPlanItem(title, due_dates[index], action, acceptance)
+        for index, (title, action, acceptance) in enumerate(definitions)
+    ]
+
+
+def build_vpn_plan(project: str, start: dt.date, end: dt.date) -> list[ProjectPlanItem]:
+    due_dates = distribute_due_dates(start, end, 7)
+    definitions = [
+        (
+            f"{project} - 明确目标、设备和约束",
+            "写清代理主要给哪些设备使用、主要访问什么、优先级是什么，并补上预算边界。",
+            "至少明确使用设备、目标用途、优先级和预算四项信息。",
+        ),
+        (
+            f"{project} - 完成技术方案选型",
+            "确定协议方案、服务器地区和客户端工具，并记录为什么选它。",
+            "形成一份选型清单，并写出不选另外 1 到 2 个方案的原因。",
+        ),
+        (
+            f"{project} - 准备服务器环境",
+            "购买或确认 VPS，拿到 IP 和登录方式，并完成基础账户、密钥或端口安全设置。",
+            "可以成功 SSH 登录，且已完成基础安全配置。",
+        ),
+        (
+            f"{project} - 完成服务端部署",
+            "安装代理服务并写好配置，确保服务端能正常启动。",
+            "服务端进程可启动，配置文件已保存，重启后能恢复运行。",
+        ),
+        (
+            f"{project} - 完成主力设备接入",
+            "在至少 1 台常用设备上配置客户端并完成连接。",
+            "至少 1 台主力设备能稳定连上，并能访问目标网站或服务。",
+        ),
+        (
+            f"{project} - 做连通性与稳定性验证",
+            "测试访问成功率、连接稳定性和基本速度表现，记录问题和修正项。",
+            "连续使用半天到一天无明显断连，并记录至少 3 条验证结果。",
+        ),
+        (
+            f"{project} - 沉淀维护文档",
+            "记录续费信息、配置备份、重装步骤和常见故障处理。",
+            "形成一份维护笔记，确保 1 周后重看也能独立复现部署。",
+        ),
+    ]
+    return [
+        ProjectPlanItem(title, due_dates[index], action, acceptance)
+        for index, (title, action, acceptance) in enumerate(definitions)
+    ]
+
+
+def build_generic_actionable_plan(project: str, start: dt.date, end: dt.date) -> list[ProjectPlanItem]:
+    due_dates = distribute_due_dates(start, end, 5)
+    definitions = [
+        (
+            f"{project} - 明确目标与完成标准",
+            "写清这个项目要解决什么问题、产出什么结果，以及这轮不做什么。",
+            "形成一段目标说明，至少包含目标、范围和完成标准。",
+        ),
+        (
+            f"{project} - 梳理现状与约束",
+            "盘点现有资料、依赖、资源和已知约束，补齐缺口。",
+            "形成一份现状清单，列出至少 3 个资源或约束点。",
+        ),
+        (
+            f"{project} - 产出第一版最小可执行结果",
+            "做出一个最小版本，不要停留在想法层面。",
+            "产出一个可演示、可阅读或可运行的第一版结果。",
+        ),
+        (
+            f"{project} - 验证风险与修正方案",
+            "验证关键假设，记录风险、依赖和需要修正的地方。",
+            "列出风险与修正项，并完成至少一轮验证。",
+        ),
+        (
+            f"{project} - 整理交付物与复盘",
+            "把过程材料和结论沉淀下来，便于后续继续推进。",
+            "完成交付物整理，并写下复盘收获和下一步建议。",
+        ),
+    ]
+    return [
+        ProjectPlanItem(title, due_dates[index], action, acceptance)
+        for index, (title, action, acceptance) in enumerate(definitions)
+    ]
+
+
+def print_project_plan(project: str, items: list[ProjectPlanItem]) -> None:
+    print(f"# 项目拆分草案: {project}")
+    for index, item in enumerate(items, start=1):
+        print(f"{index}. {item.title}")
+        print(f"   - 截止时间: {item.due_date.isoformat()}")
+        print(f"   - 动作: {item.action}")
+        print(f"   - 验收标准: {item.acceptance}")
+
+
+def seed_next_actions_from_plan(path: Path, items: list[ProjectPlanItem]) -> None:
+    text = read(path)
+    pattern = re.compile(r"(^## 下一步行动\n)(.*?)(?=^## |\Z)", re.M | re.S)
+    match = pattern.search(text)
+    if not match:
+        return
+    body = match.group(2)
+    if "定义下一个具体行动" not in body:
+        return
+    next_actions = "\n".join(f"- [ ] {item.title}" for item in items[:3]) + "\n\n"
+    path.write_text(text[:match.start()] + match.group(1) + next_actions + text[match.end():], encoding="utf-8")
+
+
+def seed_milestones_from_plan(path: Path, items: list[ProjectPlanItem]) -> None:
+    text = read(path)
+    pattern = re.compile(r"(^## 里程碑\n\n)(.*?)(?=\n## |\Z)", re.M | re.S)
+    match = pattern.search(text)
+    if not match:
+        return
+    body = match.group(2).strip()
+    if body not in {"- 暂无。", "- 暂无", "- 无。", "- 无"}:
+        return
+    milestone_lines = "\n".join(
+        f"- {item.due_date.isoformat()} 前完成：{strip_task_metadata(item.title)}" for item in items[:3]
+    )
+    replacement = match.group(1) + milestone_lines + "\n"
+    path.write_text(text[:match.start()] + replacement + text[match.end():], encoding="utf-8")
+
+
+def ensure_project_plan_section(path: Path) -> None:
+    text = read(path)
+    if re.search(r"^## 子任务清单\s*$", text, re.M):
+        return
+    marker = re.search(r"^## 复盘笔记\s*$", text, re.M)
+    if marker:
+        text = text[:marker.start()] + "## 子任务清单\n\n" + text[marker.start():]
+    else:
+        text = text.rstrip() + "\n\n## 子任务清单\n"
+    path.write_text(text.rstrip() + "\n", encoding="utf-8")
+
+
+def remove_section_placeholders(path: Path, heading: str) -> None:
+    text = read(path)
+    pattern = re.compile(rf"(^## {re.escape(heading)}\n\n)(.*?)(?=\n## |\Z)", re.M | re.S)
+    match = pattern.search(text)
+    if not match:
+        return
+    lines = [
+        line
+        for line in match.group(2).splitlines()
+        if line.strip() not in {"- 暂无。", "- 暂无", "- 无。", "- 无"}
+    ]
+    body = "\n".join(lines).strip()
+    replacement = match.group(1) + (body + "\n\n" if body else "\n")
+    path.write_text(text[:match.start()] + replacement + text[match.end():], encoding="utf-8")
+
+
 def add_automation_candidate(root: Path, task: str, date: dt.date) -> None:
     title = task[:60].strip()
     content = render_template(
@@ -582,7 +1010,7 @@ def replace_field(path: Path, heading: str, value: str) -> None:
     text = read(path)
     pattern = re.compile(rf"(^## {re.escape(heading)}\n\n)(.*?)(?=\n## |\Z)", re.M | re.S)
     if pattern.search(text):
-        text = pattern.sub(rf"\1{value}\n", text, count=1)
+        text = pattern.sub(lambda match: match.group(1) + value + "\n", text, count=1)
     else:
         text += f"\n## {heading}\n\n{value}\n"
     path.write_text(text.rstrip() + "\n", encoding="utf-8")
@@ -598,7 +1026,7 @@ def increment_stat(path: Path, label: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
-def set_stat(path: Path, label: str, value: int | str) -> None:
+def set_stat(path: Path, label: str, value: Union[int, str]) -> None:
     text = read(path)
     pattern = re.compile(rf"(- {re.escape(label)}: ).*$", re.M)
     line_value = str(value)
@@ -609,18 +1037,43 @@ def set_stat(path: Path, label: str, value: int | str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
+def promote_scheduled_for_day(root: Path, day: dt.date) -> None:
+    scheduled = root / "tasks" / "scheduled.md"
+    today_path = root / "tasks" / "today.md"
+    for line in read(scheduled).splitlines():
+        if "- [ ]" not in line:
+            continue
+        due = task_due_date(line)
+        if due != day:
+            continue
+        task = strip_task_metadata(line)
+        append_unique_line(today_path, f"- [ ] {task} | 来源: scheduled | 日期: {day.isoformat()}")
+
+
 def daily(args: argparse.Namespace) -> None:
     root = resolve_repo(args.repo)
     day = parse_date(args.date)
+    promote_scheduled_for_day(root, day)
     path = root / "dailies" / f"{day.isoformat()}.md"
     if path.exists() and not args.force:
         print(f"日报已存在: {path}")
     else:
-        path.write_text(render_daily(root, day), encoding="utf-8")
+        content = preserve_daily_review(render_daily(root, day), read(path))
+        path.write_text(content, encoding="utf-8")
         print(f"已生成日报: {path}")
     print("\n--- 日报会话播报正文 ---")
     print(render_daily_announcement(path, root, day))
     print_diff(root)
+
+
+def preserve_daily_review(new_content: str, old_content: str) -> str:
+    old_review = extract_section(old_content, "今日复盘").strip()
+    if not old_review:
+        return new_content
+    pattern = re.compile(r"(^## 今日复盘\n\n)(.*?)(?=\n## |\Z)", re.M | re.S)
+    if not pattern.search(new_content):
+        return new_content.rstrip() + f"\n\n## 今日复盘\n\n{old_review}\n"
+    return pattern.sub(lambda match: match.group(1) + old_review + "\n", new_content, count=1)
 
 
 def render_daily(root: Path, day: dt.date) -> str:
@@ -739,6 +1192,8 @@ def extract_section_any(text: str, headings: list[str]) -> str:
 def complete_task(args: argparse.Namespace) -> None:
     root, task = task_args(args)
     day = parse_date(args.date)
+    learning = extract_learning(task, args.learning)
+    task = strip_learning_clause(task)
     files = [
         root / "dailies" / f"{day.isoformat()}.md",
         root / "tasks" / "today.md",
@@ -762,7 +1217,11 @@ def complete_task(args: argparse.Namespace) -> None:
     habit_path, habit_matched, habit_added = complete_habit(root, task, day)
     if habit_path and habit_path not in changed:
         changed.append(habit_path)
-    append(root / "logs" / "execution-log.md", f"- {day.isoformat()} 已完成: {task}")
+    log_line = f"- {day.isoformat()} 已完成: {task}"
+    if learning:
+        log_line += f" | 收获: {learning}"
+        append_daily_learning(root, day, learning, f"完成: {task}")
+    append(root / "logs" / "execution-log.md", log_line)
     increment_stat(root / "state" / "stats.md", "已完成任务数")
     if habit_added:
         refresh_habit_stats(root)
@@ -952,10 +1411,126 @@ def delete_remove_candidates(candidates: list[RemoveCandidate]) -> None:
         text = read(path)
         lines = text.splitlines()
         for candidate in sorted(path_candidates, key=lambda item: item.start_line, reverse=True):
+            sync_project_subtask_delete(path, lines[candidate.start_line - 1])
             start = candidate.start_line - 1
             end = candidate.end_line
             del lines[start:end]
         path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+
+
+def sync_project_subtask_delete(source_path: Path, line: str) -> None:
+    if source_path.name != "scheduled.md":
+        return
+    project = project_ref_from_line(line)
+    task_id = task_id_from_line(line)
+    if not project or not task_id:
+        return
+    root = source_path.parents[1]
+    project_path = find_project_path(root, project)
+    if not project_path.exists():
+        return
+    text = read(project_path)
+    lines = [existing for existing in text.splitlines() if task_id not in existing]
+    project_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+
+
+def sync_project_subtask_update(source_path: Path, old_line: str, new_task: str, new_date: Optional[dt.date]) -> None:
+    if source_path.name != "scheduled.md":
+        return
+    project = project_ref_from_line(old_line)
+    task_id = task_id_from_line(old_line)
+    if not project or not task_id:
+        return
+    root = source_path.parents[1]
+    project_path = find_project_path(root, project)
+    if not project_path.exists():
+        return
+    text = read(project_path)
+    lines = []
+    updated = False
+    for line in text.splitlines():
+        if task_id not in line:
+            lines.append(line)
+            continue
+        due = new_date.isoformat() if new_date else (task_due_date(line) or today()).isoformat()
+        acceptance_match = re.search(r"\|\s*验收:\s*([^|]+)", line)
+        acceptance = acceptance_match.group(1).strip() if acceptance_match else "按更新后的任务说明完成。"
+        lines.append(f"- [ ] {new_task} | 截止: {due} | 验收: {acceptance} | 子任务: {task_id}")
+        updated = True
+    project_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    if not updated:
+        due = new_date.isoformat() if new_date else today().isoformat()
+        append_under_heading(project_path, "子任务清单", f"- [ ] {new_task} | 截止: {due} | 验收: 按更新后的任务说明完成。 | 子任务: {task_id}")
+
+
+def update_task(args: argparse.Namespace) -> None:
+    root, query = task_args(args)
+    day = parse_date(args.date)
+    candidates = find_remove_candidates(root, query, day)
+    if not candidates:
+        print(f"没有找到可更新的任务: {query}")
+        return
+    candidate = candidates[0]
+    new_task = args.new_task or strip_task_metadata(candidate.text)
+    new_type = classify_task(new_task, args.type) if args.type else source_task_type(candidate.path)
+    new_date = parse_date(args.due_date) if args.due_date else task_due_date(candidate.text)
+    old_line = read(candidate.path).splitlines()[candidate.start_line - 1]
+    delete_remove_candidates([candidate])
+    add_updated_task(root, new_task, new_type, new_date, day, old_line)
+    if candidate.path.name == "scheduled.md":
+        sync_project_subtask_update(candidate.path, old_line, new_task, new_date)
+    print(f"已更新任务: {query} -> {new_task} ({new_type})")
+    print_diff(root)
+
+
+def source_task_type(path: Path) -> str:
+    if path.name == "today.md" or path.parent.name == "dailies":
+        return "today"
+    if path.name == "scheduled.md":
+        return "scheduled"
+    if path.name == "habits.md":
+        return "habit"
+    if path.name == "waiting.md":
+        return "waiting"
+    if path.name == "blocked.md":
+        return "blocked"
+    if path.name == "automation-candidates.md":
+        return "automation"
+    if path.parent.name == "projects":
+        return "project"
+    return "today"
+
+
+def add_updated_task(root: Path, task: str, task_type: str, due_date: Optional[dt.date], day: dt.date, old_line: str) -> None:
+    if task_type == "today" and due_date and due_date != day:
+        task_type = "scheduled"
+    if task_type == "scheduled" and due_date == day:
+        append_unique_line(root / "tasks" / "today.md", f"- [ ] {task} | 来源: scheduled | 日期: {day.isoformat()}")
+    if task_type == "today":
+        add_today_task(root, task, day)
+    elif task_type == "scheduled":
+        date_text = due_date.isoformat() if due_date else day.isoformat()
+        suffix = ""
+        project = project_ref_from_line(old_line)
+        task_id = task_id_from_line(old_line)
+        if project:
+            suffix += f" | 项目: {project}"
+        if task_id:
+            suffix += f" | 子任务: {task_id}"
+        append_unique_line(root / "tasks" / "scheduled.md", f"- [ ] {task} | 截止: {date_text}{suffix}")
+    elif task_type == "habit":
+        append(root / "state" / "habits.md", "\n" + render_template("habit.md", habit_name=task))
+        refresh_habit_stats(root)
+    elif task_type == "waiting":
+        append_unique_line(root / "state" / "waiting.md", f"- [ ] {task} | 更新: {day.isoformat()}")
+    elif task_type == "blocked":
+        append_unique_line(root / "state" / "blocked.md", f"- [ ] {task} | 更新: {day.isoformat()}")
+    elif task_type == "project":
+        add_project_task(root, task, day)
+    elif task_type == "automation":
+        add_automation_candidate(root, task, day)
+    else:
+        append_unique_line(root / "tasks" / "archive.md", f"- {day.isoformat()} {task}")
 
 
 def quote_arg(value: str) -> str:
@@ -1099,7 +1674,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("repo_or_task")
     p.add_argument("task", nargs="?")
     p.add_argument("--date")
+    p.add_argument("--learning", help="Learning or insight to append to today's daily review.")
     p.set_defaults(func=complete_task)
+
+    p = sub.add_parser("update-task", help="Update task content, type, or due date.")
+    p.add_argument("repo_or_task")
+    p.add_argument("task", nargs="?")
+    p.add_argument("--new-task", help="Replacement task text.")
+    p.add_argument("--type", help="Replacement task type.")
+    p.add_argument("--due-date", help="Replacement due date for scheduled/today flow.")
+    p.add_argument("--date")
+    p.set_defaults(func=update_task)
 
     p = sub.add_parser("remove-task", help="Find matching tasks and remove confirmed candidates.")
     p.add_argument("repo_or_task")
@@ -1107,6 +1692,24 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--date")
     p.add_argument("--confirm", help="Candidate id list such as 1,3, or all. Omit to list candidates only.")
     p.set_defaults(func=remove_task)
+
+    p = sub.add_parser("update-project", help="Update project progress, milestones, and learnings.")
+    p.add_argument("project")
+    p.add_argument("update", nargs="?")
+    p.add_argument("--repo")
+    p.add_argument("--date")
+    p.add_argument("--progress")
+    p.add_argument("--milestone")
+    p.add_argument("--learning")
+    p.set_defaults(func=update_project)
+
+    p = sub.add_parser("plan-project", help="Draft or confirm a project subtask plan.")
+    p.add_argument("project")
+    p.add_argument("--repo")
+    p.add_argument("--date")
+    p.add_argument("--deadline")
+    p.add_argument("--confirm", action="store_true")
+    p.set_defaults(func=plan_project)
 
     p = sub.add_parser("weekly-review", help="Generate a weekly review.")
     p.add_argument("repo", nargs="?")
