@@ -37,7 +37,7 @@ TASK_TYPE_ALIASES = {
     "scheduled": "scheduled",
     "scheduled task": "scheduled",
     "定时任务": "scheduled",
-    "周期任务": "scheduled",
+    "截止日期任务": "scheduled",
     "automation": "automation",
     "automation candidate": "automation",
     "codex 自动化任务": "automation",
@@ -48,6 +48,8 @@ TASK_TYPE_ALIASES = {
     "habit": "habit",
     "习惯": "habit",
     "定式任务": "habit",
+    "周期任务": "habit",
+    "惯例": "habit",
 }
 
 
@@ -178,6 +180,225 @@ def bullet_lines(text: str) -> list[str]:
     return lines
 
 
+def habit_items(root: Path, day: dt.date) -> list[tuple[str, bool]]:
+    text = read(root / "state" / "habits.md")
+    habits: list[tuple[str, bool]] = []
+    for match in re.finditer(r"^##\s+(.+?)\n(.*?)(?=^##\s+|\Z)", text, re.M | re.S):
+        title = match.group(1).strip()
+        body = match.group(2)
+        auto_match = re.search(r"^-\s*自动加入日报:\s*(.+?)\s*$", body, re.M)
+        if not auto_match:
+            continue
+        auto_value = auto_match.group(1).strip().lower()
+        if auto_value not in {"是", "true", "yes", "y", "1"}:
+            continue
+        habit_match = re.search(r"^-\s*Habit:\s*(.+?)\s*$", body, re.M)
+        name = habit_match.group(1).strip() if habit_match else title
+        completion_text = extract_completion_text(body)
+        completed = day.isoformat() in re.findall(r"\d{4}-\d{2}-\d{2}", completion_text)
+        habits.append((name, completed))
+    return habits
+
+
+def extract_completion_text(text: str) -> str:
+    inline_match = re.search(r"^-\s*完成记录:\s*(.*?)$", text, re.M)
+    if inline_match:
+        return inline_match.group(1)
+    section_match = re.search(r"^###\s+完成记录\s*\n(.*?)(?=^###\s+|\Z)", text, re.M | re.S)
+    return section_match.group(1) if section_match else ""
+
+
+def habit_blocks(text: str) -> list[tuple[re.Match[str], str, str]]:
+    blocks = []
+    for match in re.finditer(r"^##\s+(.+?)\n(.*?)(?=^##\s+|\Z)", text, re.M | re.S):
+        title = match.group(1).strip()
+        body = match.group(2)
+        habit_match = re.search(r"^-\s*Habit:\s*(.+?)\s*$", body, re.M)
+        name = habit_match.group(1).strip() if habit_match else title
+        blocks.append((match, title, name))
+    return blocks
+
+
+def matches_task_name(candidate: str, task: str) -> bool:
+    left = normalize_match_text(candidate)
+    right = normalize_match_text(task)
+    return bool(left and right and (left in right or right in left))
+
+
+def normalize_match_text(value: str) -> str:
+    value = re.sub(r"\|.*$", "", value)
+    value = re.sub(r"\s+", " ", value.strip().lower())
+    return value
+
+
+def completion_dates(text: str) -> list[dt.date]:
+    dates = []
+    for raw in re.findall(r"\d{4}-\d{2}-\d{2}", extract_completion_text(text)):
+        try:
+            dates.append(dt.date.fromisoformat(raw))
+        except ValueError:
+            continue
+    return sorted(set(dates))
+
+
+def habit_period(frequency: str) -> str:
+    lowered = frequency.lower()
+    if re.search(r"weekly|每周|周", lowered):
+        return "weekly"
+    if re.search(r"monthly|每月|月", lowered):
+        return "monthly"
+    return "daily"
+
+
+def habit_frequency(body: str) -> str:
+    match = re.search(r"^-\s*频率:\s*(.*?)\s*$", body, re.M)
+    return match.group(1).strip() if match else ""
+
+
+def habit_streak(dates: list[dt.date], frequency: str) -> int:
+    if not dates:
+        return 0
+    period = habit_period(frequency)
+    if period == "daily":
+        streak = 1
+        current = dates[-1]
+        for previous in reversed(dates[:-1]):
+            if previous == current - dt.timedelta(days=1):
+                streak += 1
+                current = previous
+            else:
+                break
+        return streak
+    if period == "weekly":
+        weeks = sorted({(day.isocalendar().year, day.isocalendar().week) for day in dates})
+        streak = 1
+        current_year, current_week = weeks[-1]
+        current_monday = dt.date.fromisocalendar(current_year, current_week, 1)
+        for year, week in reversed(weeks[:-1]):
+            monday = dt.date.fromisocalendar(year, week, 1)
+            if monday == current_monday - dt.timedelta(days=7):
+                streak += 1
+                current_monday = monday
+            else:
+                break
+        return streak
+    months = sorted({(day.year, day.month) for day in dates})
+    streak = 1
+    current_year, current_month = months[-1]
+    for year, month in reversed(months[:-1]):
+        previous_month = current_month - 1
+        previous_year = current_year
+        if previous_month == 0:
+            previous_month = 12
+            previous_year -= 1
+        if (year, month) == (previous_year, previous_month):
+            streak += 1
+            current_year, current_month = year, month
+        else:
+            break
+    return streak
+
+
+def habit_completion_rate(dates: list[dt.date], frequency: str) -> str:
+    if not dates:
+        return "0%"
+    period = habit_period(frequency)
+    first = dates[0]
+    last = dates[-1]
+    if period == "weekly":
+        first_monday = dt.date.fromisocalendar(first.isocalendar().year, first.isocalendar().week, 1)
+        last_monday = dt.date.fromisocalendar(last.isocalendar().year, last.isocalendar().week, 1)
+        total = ((last_monday - first_monday).days // 7) + 1
+        done = len({(day.isocalendar().year, day.isocalendar().week) for day in dates})
+    elif period == "monthly":
+        total = (last.year - first.year) * 12 + last.month - first.month + 1
+        done = len({(day.year, day.month) for day in dates})
+    else:
+        total = (last - first).days + 1
+        done = len(dates)
+    return f"{round(done / max(total, 1) * 100)}%"
+
+
+def replace_bullet_field(text: str, label: str, value: str, before_heading: str | None = None) -> str:
+    pattern = re.compile(rf"^-\s*{re.escape(label)}:\s*.*$", re.M)
+    line = f"- {label}: {value}"
+    if pattern.search(text):
+        return pattern.sub(line, text, count=1)
+    if before_heading:
+        heading_pattern = re.compile(rf"^###\s+{re.escape(before_heading)}\s*$", re.M)
+        match = heading_pattern.search(text)
+        if match:
+            prefix = text[:match.start()].rstrip()
+            suffix = text[match.start():]
+            return prefix + "\n" + line + "\n\n" + suffix
+    return text.rstrip() + "\n" + line + "\n"
+
+
+def append_habit_completion(body: str, day: dt.date) -> tuple[str, bool]:
+    dates = completion_dates(body)
+    if day in dates:
+        return body, False
+    line = f"- {day.isoformat()} 已完成"
+    section_pattern = re.compile(r"(^###\s+完成记录\s*\n)(.*?)(?=^###\s+|\Z)", re.M | re.S)
+    match = section_pattern.search(body)
+    if match:
+        records = match.group(2).strip()
+        if "还没有记录完成情况" in records and len(re.findall(r"\d{4}-\d{2}-\d{2}", records)) == 0:
+            records = ""
+        records = (records.rstrip() + "\n" + line).strip()
+        body = body[:match.start()] + match.group(1) + records + "\n" + body[match.end():]
+    else:
+        body = body.rstrip() + "\n\n### 完成记录\n\n" + line + "\n"
+    return body, True
+
+
+def refresh_habit_metrics(body: str) -> str:
+    frequency = habit_frequency(body)
+    dates = completion_dates(body)
+    body = replace_bullet_field(body, "当前连续天数", str(habit_streak(dates, frequency)), "完成记录")
+    body = replace_bullet_field(body, "完成率", habit_completion_rate(dates, frequency), "完成记录")
+    return body
+
+
+def complete_habit(root: Path, task: str, day: dt.date) -> tuple[Path | None, bool, bool]:
+    path = root / "state" / "habits.md"
+    text = read(path)
+    if not text:
+        return None, False, False
+    for match, title, name in habit_blocks(text):
+        if not (matches_task_name(title, task) or matches_task_name(name, task)):
+            continue
+        body, added = append_habit_completion(match.group(2), day)
+        body = refresh_habit_metrics(body)
+        new_block = f"## {title}\n{body.rstrip()}\n"
+        path.write_text(text[:match.start()] + new_block + text[match.end():], encoding="utf-8")
+        refresh_habit_stats(root)
+        return path, True, added
+    return None, False, False
+
+
+def refresh_habit_stats(root: Path) -> None:
+    habits_text = read(root / "state" / "habits.md")
+    blocks = habit_blocks(habits_text)
+    auto_count = 0
+    completion_count = 0
+    latest: dt.date | None = None
+    for match, _title, _name in blocks:
+        body = match.group(2)
+        auto_match = re.search(r"^-\s*自动加入日报:\s*(.+?)\s*$", body, re.M)
+        if auto_match and auto_match.group(1).strip().lower() in {"是", "true", "yes", "y", "1"}:
+            auto_count += 1
+        dates = completion_dates(body)
+        completion_count += len(dates)
+        if dates:
+            latest = max(latest, dates[-1]) if latest else dates[-1]
+    stats_path = root / "state" / "stats.md"
+    set_stat(stats_path, "Habit 总数", len(blocks))
+    set_stat(stats_path, "自动加入日报 Habit 数", auto_count)
+    set_stat(stats_path, "Habit 完成次数", completion_count)
+    set_stat(stats_path, "Habit 最近完成日期", latest.isoformat() if latest else "无")
+
+
 def copy_templates(root: Path) -> None:
     for template in TEMPLATE_DIR.glob("*.md"):
         write_new(root / "templates" / template.name, read(template))
@@ -267,7 +488,9 @@ def classify_task(text: str, explicit_type: str | None = None) -> str:
         return "blocked"
     if re.search(r"\b(generate|write|draft|summari[sz]e|analy[sz]e|refactor|script|report|csv|code|codex|automate)\b|生成|脚本|自动化|报告|整理|分析", lowered):
         return "automation"
-    if re.search(r"\b(every|daily|weekly|monthly|tomorrow|next week|schedule|recurring)\b|\d{4}-\d{2}-\d{2}|每天|每周|每月|定时|周期", lowered):
+    if re.search(r"\b(habit|routine|daily|weekly|monthly|every)\b|每天|每周|每月|每日|每个月|习惯|定式|惯例|周期", lowered):
+        return "habit"
+    if re.search(r"\b(due|deadline|by|tomorrow|next week|schedule|remind|reminder)\b|\d{4}-\d{2}-\d{2}|截止|到期|提醒|定时|日期|明天|下周", lowered):
         return "scheduled"
     if re.search(r"\b(project|milestone|launch|build|research|strategy|roadmap)\b|项目|长期|里程碑|上线|调研|战略", lowered):
         return "project"
@@ -296,6 +519,7 @@ def add_task(args: argparse.Namespace) -> None:
         append(root / "tasks" / "archive.md", f"- {date.isoformat()} {task}")
     elif task_type == "habit":
         append(root / "state" / "habits.md", "\n" + render_template("habit.md", habit_name=task))
+        refresh_habit_stats(root)
     print(f"已添加任务，类型为 {task_type}: {task}")
     print_diff(root)
 
@@ -363,6 +587,17 @@ def increment_stat(path: Path, label: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
+def set_stat(path: Path, label: str, value: int | str) -> None:
+    text = read(path)
+    pattern = re.compile(rf"(- {re.escape(label)}: ).*$", re.M)
+    line_value = str(value)
+    if pattern.search(text):
+        text = pattern.sub(lambda m: m.group(1) + line_value, text, count=1)
+    else:
+        text = text.rstrip() + f"\n- {label}: {line_value}\n"
+    path.write_text(text, encoding="utf-8")
+
+
 def daily(args: argparse.Namespace) -> None:
     root = resolve_repo(args.repo)
     day = parse_date(args.date)
@@ -386,6 +621,7 @@ def render_daily(root: Path, day: dt.date) -> str:
     blocked = checklist_items(read(root / "state" / "blocked.md"), checked=False) or bullet_lines(read(root / "state" / "blocked.md")) or ["当前没有阻塞项。"]
     projects = project_summaries(root)
     automations = checklist_items(read(root / "tasks" / "automation-candidates.md"), checked=False)
+    habits = habit_items(root, day)
     today_tasks = [item for item in undone if not item.startswith("没有需要结转")]
     suggestions = ["选择一个最重要的项目下一步行动。", "清空或路由收件箱里的新事项。"]
     if blocked and blocked[0] != "当前没有阻塞项。":
@@ -422,7 +658,13 @@ def render_daily(root: Path, day: dt.date) -> str:
 
 ## 今日任务清单
 
-{as_checklist(today_tasks) or "- 暂无任务。"}
+### Habit
+
+{as_habit_checklist(habits) or "- 暂无自动加入日报的 Habit。"}
+
+### 其他任务
+
+{as_checklist(today_tasks) or "- 暂无其他任务。"}
 
 ## 今日新增任务
 
@@ -451,6 +693,10 @@ def as_bullets(items: list[str]) -> str:
 
 def as_checklist(items: list[str]) -> str:
     return "\n".join(f"- [ ] {item}" for item in items)
+
+
+def as_habit_checklist(items: list[tuple[str, bool]]) -> str:
+    return "\n".join(f"- [{'x' if completed else ' '}] {name}" for name, completed in items)
 
 
 def project_summaries(root: Path) -> list[str]:
@@ -502,13 +748,20 @@ def complete_task(args: argparse.Namespace) -> None:
         if count:
             path.write_text(new_text, encoding="utf-8")
             changed.append(path)
+    habit_path, habit_matched, habit_added = complete_habit(root, task, day)
+    if habit_path and habit_path not in changed:
+        changed.append(habit_path)
     append(root / "logs" / "execution-log.md", f"- {day.isoformat()} 已完成: {task}")
     increment_stat(root / "state" / "stats.md", "已完成任务数")
+    if habit_added:
+        refresh_habit_stats(root)
     print("已在以下文件中标记完成:")
     for path in changed:
         print(f"- {path}")
     if not changed:
         print("- 没有找到匹配的未完成复选框；已仅记录完成日志。")
+    elif habit_matched and not habit_added:
+        print("- Habit 今天已经记录过完成，本次没有重复增加 Habit 完成次数。")
     print_diff(root)
 
 

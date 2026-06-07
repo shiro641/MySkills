@@ -132,7 +132,7 @@ If explicitly specified, route exactly as requested:
 
 - 今日任务 / Today Task -> today's Daily and `tasks/today.md`
 - 长期项目 / Project -> `projects/<slug>.md`
-- 定时任务 / 周期任务 / Scheduled Task -> `tasks/scheduled.md`
+- 定时任务 / 截止日期任务 / Scheduled Task -> `tasks/scheduled.md`
 - Codex 自动化任务 / Automation Candidate -> `tasks/automation-candidates.md`
 - Waiting -> `state/waiting.md`
 - Blocked -> `state/blocked.md`
@@ -145,7 +145,8 @@ When intent is not explicit:
 
 - Waiting: task depends on a named person, reply, approval, delivery, vendor, or external owner.
 - Blocked: task cannot proceed because of missing access, decision, dependency, error, or unresolved risk.
-- Scheduled Task: task contains a date, recurrence, deadline, "every", "daily", "weekly", or "monthly".
+- Scheduled Task: task has a clear due date, execution date, reminder date, or time-bound deadline. Store the date/deadline in `tasks/scheduled.md` so it can be surfaced later.
+- Habit: task describes a repeated behavior to cultivate or track over time, especially "daily", "weekly", "monthly", "每天", "每周", "每月", "定式", or "习惯", and should keep frequency, auto-include, completion log, streak, and completion rate in `state/habits.md`.
 - Automation Candidate: task is file/code/data/document/email/search/report generation that Codex can likely execute end-to-end.
 - Project: task implies a multi-step outcome lasting more than one day or mentions project, milestone, launch, build, research, design, strategy.
 - Archive: task is explicitly a past record or completed log.
@@ -231,7 +232,7 @@ python3 <skill_dir>/scripts/personal_os.py add-task "这个单词的学习" --ty
 
 ### habit_manager
 
-Habit support is reserved in `state/habits.md` and `templates/habit.md`. Treat habits as recurring tasks with frequency, auto-include setting, completion log, streak, and completion rate.
+Habit support is reserved in `state/habits.md` and `templates/habit.md`. Treat habits as repeated behaviors with frequency, auto-include setting, completion log, streak, and completion rate. Do not route a habit to `tasks/scheduled.md` merely because it repeats; use Scheduled only when the item is anchored to a due date, execution date, or reminder date.
 
 ## Validation
 

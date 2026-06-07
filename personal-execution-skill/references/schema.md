@@ -12,7 +12,7 @@ All newly generated user-facing Markdown content should be written in Chinese by
 - `weekly-reviews/YYYY-Www.md`: weekly review for ISO week.
 - `projects/*.md`: one long-term project per file.
 - `tasks/today.md`: rolling today task ledger.
-- `tasks/scheduled.md`: scheduled and recurring tasks.
+- `tasks/scheduled.md`: tasks with due dates, execution dates, reminder dates, or time-bound deadlines.
 - `tasks/automation-candidates.md`: Codex automation candidates.
 - `tasks/archive.md`: completed or historical records.
 - `state/waiting.md`: external-owner Waiting items.
@@ -31,6 +31,8 @@ All newly generated user-facing Markdown content should be written in Chinese by
 - 长期项目进展
 - 今日建议
 - 今日任务清单
+  - Habit
+  - 其他任务
 - 今日新增任务
 - 今日复盘
 
