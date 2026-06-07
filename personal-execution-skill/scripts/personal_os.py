@@ -11,12 +11,23 @@ import re
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
 TEMPLATE_DIR = SKILL_DIR / "templates"
 CONFIG_PATH = Path(os.environ.get("PERSONAL_OS_CONFIG", SKILL_DIR / "state" / "config.json"))
+
+
+@dataclass(frozen=True)
+class RemoveCandidate:
+    id: int
+    path: Path
+    kind: str
+    text: str
+    start_line: int
+    end_line: int
 
 DIRS = [
     "dailies",
@@ -778,6 +789,179 @@ def mark_fuzzy(text: str, needle: str) -> tuple[str, int]:
     return text, 0
 
 
+def remove_task(args: argparse.Namespace) -> None:
+    root, task = task_args(args)
+    day = parse_date(args.date)
+    candidates = find_remove_candidates(root, task, day)
+    if not candidates:
+        print(f"没有在当前任务池中找到匹配任务: {task}")
+        return
+    if not args.confirm:
+        print_remove_candidates(candidates, task)
+        print("\n请二次确认后再删除，例如:")
+        print(f"python3 {Path(__file__).resolve()} remove-task {quote_arg(str(root))} {quote_arg(task)} --date {day.isoformat()} --confirm 1")
+        print(f"python3 {Path(__file__).resolve()} remove-task {quote_arg(str(root))} {quote_arg(task)} --date {day.isoformat()} --confirm all")
+        return
+    selected = select_remove_candidates(candidates, args.confirm)
+    if not selected:
+        print(f"没有有效的确认编号: {args.confirm}")
+        print_remove_candidates(candidates, task)
+        return
+    delete_remove_candidates(selected)
+    refresh_habit_stats(root)
+    print("已删除以下任务:")
+    for candidate in selected:
+        try:
+            rel = candidate.path.relative_to(root)
+        except ValueError:
+            rel = candidate.path
+        print(f"- [{candidate.id}] {candidate.kind} {rel}:{candidate.start_line} {candidate.text}")
+    print_diff(root)
+
+
+def find_remove_candidates(root: Path, query: str, day: dt.date) -> list[RemoveCandidate]:
+    paths = current_task_pool_paths(root, day)
+    candidates: list[RemoveCandidate] = []
+    next_id = 1
+    seen: set[tuple[Path, str, int, int]] = set()
+    for path in paths:
+        text = read(path)
+        if not text:
+            continue
+        for kind, item_text, start, end in candidate_spans(path, text):
+            if not matches_task_name(item_text, query):
+                continue
+            key = (path, kind, start, end)
+            if key in seen:
+                continue
+            seen.add(key)
+            candidates.append(RemoveCandidate(next_id, path, kind, item_text.strip(), start, end))
+            next_id += 1
+    return candidates
+
+
+def current_task_pool_paths(root: Path, day: dt.date) -> list[Path]:
+    paths = [
+        root / "dailies" / f"{day.isoformat()}.md",
+        root / "tasks" / "today.md",
+        root / "tasks" / "scheduled.md",
+        root / "tasks" / "automation-candidates.md",
+        root / "state" / "waiting.md",
+        root / "state" / "blocked.md",
+        root / "state" / "habits.md",
+    ]
+    paths.extend(sorted((root / "projects").glob("*.md")))
+    return paths
+
+
+def candidate_spans(path: Path, text: str) -> list[tuple[str, str, int, int]]:
+    candidates: list[tuple[str, str, int, int]] = []
+    if path.name == "habits.md":
+        candidates.extend(habit_remove_spans(text))
+    if path.name == "automation-candidates.md":
+        candidates.extend(automation_remove_spans(text))
+    if path.parent.name == "projects":
+        candidates.extend(project_remove_spans(path, text))
+    candidates.extend(checklist_remove_spans(text))
+    candidates.extend(list_item_remove_spans(text))
+    return candidates
+
+
+def checklist_remove_spans(text: str) -> list[tuple[str, str, int, int]]:
+    spans = []
+    for line_no, line in enumerate(text.splitlines(), start=1):
+        if re.match(r"^\s*-\s+\[[ xX]\]\s+", line):
+            cleaned = re.sub(r"^\s*-\s+\[[ xX]\]\s+", "", line).strip()
+            spans.append(("checkbox", cleaned, line_no, line_no))
+    return spans
+
+
+def list_item_remove_spans(text: str) -> list[tuple[str, str, int, int]]:
+    spans = []
+    for line_no, line in enumerate(text.splitlines(), start=1):
+        if re.match(r"^\s*-\s+\[[ xX]\]\s+", line):
+            continue
+        if not re.match(r"^\s*-\s+", line):
+            continue
+        cleaned = re.sub(r"^\s*-\s+", "", line).strip()
+        spans.append(("list-item", cleaned, line_no, line_no))
+    return spans
+
+
+def habit_remove_spans(text: str) -> list[tuple[str, str, int, int]]:
+    spans = []
+    for match, title, name in habit_blocks(text):
+        start = line_number_at(text, match.start())
+        end = line_number_at(text, match.end())
+        body = match.group(2).strip()
+        searchable = "\n".join(part for part in [title, name, body] if part)
+        spans.append(("habit", searchable, start, end))
+    return spans
+
+
+def automation_remove_spans(text: str) -> list[tuple[str, str, int, int]]:
+    spans = []
+    for match in re.finditer(r"^##\s+(.+?)\n(.*?)(?=^##\s+|\Z)", text, re.M | re.S):
+        start = line_number_at(text, match.start())
+        end = line_number_at(text, match.end())
+        searchable = (match.group(1).strip() + "\n" + match.group(2).strip()).strip()
+        spans.append(("automation-candidate", searchable, start, end))
+    return spans
+
+
+def project_remove_spans(path: Path, text: str) -> list[tuple[str, str, int, int]]:
+    title = text.splitlines()[0].lstrip("# ").strip() if text else path.stem
+    if not title:
+        return []
+    return [("project", title, 1, max(1, len(text.splitlines())))]
+
+
+def line_number_at(text: str, offset: int) -> int:
+    return text.count("\n", 0, offset) + 1
+
+
+def print_remove_candidates(candidates: list[RemoveCandidate], query: str) -> None:
+    print(f"在当前任务池中找到 {len(candidates)} 个可能匹配: {query}")
+    for candidate in candidates:
+        print(f"[{candidate.id}] {candidate.kind} {candidate.path}:{candidate.start_line}")
+        print(f"    {candidate.text.splitlines()[0]}")
+
+
+def select_remove_candidates(candidates: list[RemoveCandidate], confirm: str) -> list[RemoveCandidate]:
+    value = confirm.strip().lower()
+    if value in {"all", "全部"}:
+        return candidates
+    ids: set[int] = set()
+    for piece in re.split(r"[,，\s]+", value):
+        if not piece:
+            continue
+        if not piece.isdigit():
+            continue
+        ids.add(int(piece))
+    return [candidate for candidate in candidates if candidate.id in ids]
+
+
+def delete_remove_candidates(candidates: list[RemoveCandidate]) -> None:
+    by_path: dict[Path, list[RemoveCandidate]] = {}
+    for candidate in candidates:
+        by_path.setdefault(candidate.path, []).append(candidate)
+    for path, path_candidates in by_path.items():
+        if any(candidate.kind == "project" for candidate in path_candidates):
+            path.unlink()
+            continue
+        text = read(path)
+        lines = text.splitlines()
+        for candidate in sorted(path_candidates, key=lambda item: item.start_line, reverse=True):
+            start = candidate.start_line - 1
+            end = candidate.end_line
+            del lines[start:end]
+        path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+
+
+def quote_arg(value: str) -> str:
+    return "'" + value.replace("'", "'\"'\"'") + "'"
+
+
 def weekly_review(args: argparse.Namespace) -> None:
     root = resolve_repo(args.repo)
     start = iso_week_start(args.week_start)
@@ -916,6 +1100,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("task", nargs="?")
     p.add_argument("--date")
     p.set_defaults(func=complete_task)
+
+    p = sub.add_parser("remove-task", help="Find matching tasks and remove confirmed candidates.")
+    p.add_argument("repo_or_task")
+    p.add_argument("task", nargs="?")
+    p.add_argument("--date")
+    p.add_argument("--confirm", help="Candidate id list such as 1,3, or all. Omit to list candidates only.")
+    p.set_defaults(func=remove_task)
 
     p = sub.add_parser("weekly-review", help="Generate a weekly review.")
     p.add_argument("repo", nargs="?")

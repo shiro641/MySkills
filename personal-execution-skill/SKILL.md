@@ -27,8 +27,11 @@ If the user says any of the following, use this skill immediately instead of sea
 - "我完成了，帮我标记完成"
 - "mark done"
 - "complete task"
+- "remove task"
+- "删除任务"
+- "移除任务"
 
-`add-task`, `complete-task`, and `habit` are script-backed capabilities in `scripts/personal_os.py`. They are not separate MCP tools, so `tool_search` may not find them.
+`add-task`, `complete-task`, `remove-task`, and `habit` are script-backed capabilities in `scripts/personal_os.py`. They are not separate MCP tools, so `tool_search` may not find them.
 
 ## Quick Start
 
@@ -41,6 +44,8 @@ python3 <skill_dir>/scripts/personal_os.py daily --date YYYY-MM-DD
 python3 <skill_dir>/scripts/personal_os.py add-task "task text" --type today
 python3 <skill_dir>/scripts/personal_os.py add-task "task text" --type habit
 python3 <skill_dir>/scripts/personal_os.py complete-task "task text" --date YYYY-MM-DD
+python3 <skill_dir>/scripts/personal_os.py remove-task "task text" --date YYYY-MM-DD
+python3 <skill_dir>/scripts/personal_os.py remove-task "task text" --date YYYY-MM-DD --confirm 1
 python3 <skill_dir>/scripts/personal_os.py weekly-review --week-start YYYY-MM-DD
 python3 <skill_dir>/scripts/personal_os.py project-review
 ```
@@ -62,6 +67,7 @@ Use this skill when the user asks to:
 - add, classify, or route a task
 - add a habit, routine, 惯例, 习惯, or 定式任务
 - complete a task and update related records
+- remove a task after listing candidate matches and receiving explicit confirmation
 - generate a weekly review
 - review long-term projects
 - identify tasks suitable for Codex automation
@@ -75,6 +81,7 @@ Use this skill when the user asks to:
 - `add_task`: "add task", "新增任务", "记一条 Waiting", "加入长期项目", "加入自动化候选"
 - `add_habit`: "作为 habit", "作为惯例", "作为习惯", "后续告诉你完成时更新状态", "每天/每周带入"
 - `complete_task`: "complete task", "完成任务", "mark done", "把 X 标记完成", "我完成了 X", "更新这个任务的状态"
+- `remove_task`: "remove task", "删除任务", "移除任务", "把 X 从任务里删掉"
 - `generate_weekly_review`: "weekly review", "周复盘", "生成本周总结"
 - `project_review`: "review projects", "项目巡检", "哪些项目停滞/有风险"
 - `automation_detector`: "能不能交给 Codex", "适合自动化吗", "automation candidate"
@@ -215,6 +222,29 @@ python3 <skill_dir>/scripts/personal_os.py add-task "这个单词的学习" --ty
 3. Update related project, Waiting, or Blocked status when a match exists.
 4. Append `logs/execution-log.md`.
 5. Update `state/stats.md` when possible.
+6. Show diff and suggest commit.
+
+### remove_task
+
+Use this workflow when the user says "remove xxx task", "删除任务 xxx", "移除任务 xxx", or asks to delete a task from the current task pool.
+
+1. Run the script without `--confirm` first:
+
+```bash
+python3 <skill_dir>/scripts/personal_os.py remove-task "task text" --date YYYY-MM-DD
+```
+
+2. Show the numbered candidate list to the user. Candidates can come from today's Daily, `tasks/today.md`, `tasks/scheduled.md`, `tasks/automation-candidates.md`, `state/waiting.md`, `state/blocked.md`, `state/habits.md`, and `projects/*.md`.
+3. Do not delete anything until the user explicitly confirms one or more candidate numbers, or confirms all candidates.
+4. After confirmation, run:
+
+```bash
+python3 <skill_dir>/scripts/personal_os.py remove-task "task text" --date YYYY-MM-DD --confirm 1
+python3 <skill_dir>/scripts/personal_os.py remove-task "task text" --date YYYY-MM-DD --confirm 1,3
+python3 <skill_dir>/scripts/personal_os.py remove-task "task text" --date YYYY-MM-DD --confirm all
+```
+
+5. For checkbox tasks, delete the matching line. For Habit records and automation candidate records, delete the whole matched block. For a project candidate, delete the project file only when the confirmed candidate is the project itself.
 6. Show diff and suggest commit.
 
 ### generate_weekly_review
