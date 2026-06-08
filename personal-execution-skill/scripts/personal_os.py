@@ -1087,13 +1087,16 @@ def render_daily(root: Path, day: dt.date) -> str:
     automations = checklist_items(read(root / "tasks" / "automation-candidates.md"), checked=False)
     habits = habit_items(root, day)
     today_tasks = [item for item in undone if not item.startswith("没有需要结转")]
-    suggestions = ["选择一个最重要的项目下一步行动。", "清空或路由收件箱里的新事项。"]
-    if blocked and blocked[0] != "当前没有阻塞项。":
-        suggestions.insert(0, "先处理影响最大的阻塞项。")
-    if waiting and waiting[0] != "当前没有等待中事项。":
-        suggestions.append("给最早的等待中事项发一条简短跟进。")
-    if automations:
-        suggestions.append("运行或细化一个 Codex 自动化候选。")
+    near_tasks = near_term_tasks(root, day)
+    suggestions = render_daily_suggestions(
+        near_tasks=near_tasks,
+        today_tasks=today_tasks,
+        waiting=waiting,
+        blocked=blocked,
+        projects=projects,
+        automations=automations,
+        habits=habits,
+    )
     return f"""# 日报 - {day.isoformat()}
 
 ## 昨日完成
@@ -1116,9 +1119,9 @@ def render_daily(root: Path, day: dt.date) -> str:
 
 {as_bullets(projects or ["还没有记录项目进展。"])}
 
-## 今日建议
+## 近3天需要处理任务
 
-{as_bullets(suggestions)}
+{as_bullets(near_tasks or ["近3天没有记录需要处理的任务。"])}
 
 ## 今日任务清单
 
@@ -1134,12 +1137,82 @@ def render_daily(root: Path, day: dt.date) -> str:
 
 - 暂无。
 
+## 今日建议
+
+{as_bullets(suggestions)}
+
 ## 今日复盘
 
 - 收获:
 - 卡点:
 - 结转:
 """
+
+
+def near_term_tasks(root: Path, day: dt.date) -> list[str]:
+    end = day + dt.timedelta(days=3)
+    sources = [
+        root / "tasks" / "scheduled.md",
+        root / "tasks" / "today.md",
+        root / "dailies" / f"{day.isoformat()}.md",
+    ]
+    items: list[tuple[dt.date, str]] = []
+    seen: set[tuple[dt.date, str]] = set()
+    for path in sources:
+        for line in read(path).splitlines():
+            if not re.match(r"^\s*-\s+\[ \]\s+", line):
+                continue
+            due = task_due_date(line)
+            if not due or due < day or due > end:
+                continue
+            task = strip_task_metadata(line)
+            key = (due, task)
+            if key in seen:
+                continue
+            seen.add(key)
+            items.append((due, task))
+    items.sort(key=lambda item: (item[0], item[1]))
+    return [f"{due.isoformat()}：{task}" for due, task in items]
+
+
+def render_daily_suggestions(
+    near_tasks: list[str],
+    today_tasks: list[str],
+    waiting: list[str],
+    blocked: list[str],
+    projects: list[str],
+    automations: list[str],
+    habits: list[tuple[str, bool]],
+) -> list[str]:
+    suggestions: list[str] = []
+    active_blocked = [item for item in blocked if item != "当前没有阻塞项。"]
+    active_waiting = [item for item in waiting if item != "当前没有等待中事项。"]
+    open_habits = [name for name, completed in habits if not completed]
+
+    if active_blocked:
+        suggestions.append(f"先处理阻塞项“{short_task(active_blocked[0])}”，把卡点拆成一个可执行的解阻动作或明确需要谁来决策。")
+    if near_tasks:
+        suggestions.append(f"近3天优先推进“{short_task(near_tasks[0])}”，先产出一个可验收的小结果，再处理低优先级事项。")
+    if today_tasks:
+        suggestions.append(f"今日其他任务从“{short_task(today_tasks[0])}”开始，建议先用 25 到 45 分钟完成第一步，避免只停留在待办列表里。")
+    if open_habits:
+        suggestions.append(f"Habit 还有 {len(open_habits)} 项未完成，建议把“{short_task(open_habits[0])}”安排到固定时段，完成后及时标记，保证连续记录不断。")
+    if active_waiting:
+        suggestions.append(f"等待中事项“{short_task(active_waiting[0])}”可以发一条简短跟进，确认对方下一步和预计时间。")
+    if automations:
+        suggestions.append(f"自动化候选里有 {len(automations)} 项开放任务，适合挑一项交给 Codex 拆步骤或直接执行，减少人工任务池压力。")
+    if projects and not near_tasks:
+        suggestions.append(f"长期项目当前没有近3天明确截止项，建议从“{short_task(projects[0])}”反推出一个今天能完成的下一步。")
+    if not suggestions:
+        suggestions.append("今天任务池较轻，建议补充一个明确产出型任务，或做一次收件箱清理，把新事项路由到 Today、Scheduled、Project 或 Habit。")
+    return suggestions[:5]
+
+
+def short_task(value: str, limit: int = 48) -> str:
+    value = strip_task_metadata(value)
+    value = re.sub(r"^\d{4}-\d{2}-\d{2}[：:]\s*", "", value).strip()
+    value = re.sub(r"\s+", " ", value)
+    return value if len(value) <= limit else value[:limit].rstrip() + "..."
 
 
 def render_daily_announcement(path: Path, root: Path, day: dt.date) -> str:

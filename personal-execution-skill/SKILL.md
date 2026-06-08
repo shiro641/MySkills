@@ -43,6 +43,7 @@ python3 <skill_dir>/scripts/personal_os.py bootstrap <target_repo>
 python3 <skill_dir>/scripts/personal_os.py set-repo <target_repo>
 python3 <skill_dir>/scripts/personal_os.py daily --date YYYY-MM-DD
 python3 <skill_dir>/scripts/personal_os.py add-task "task text" --type today
+python3 <skill_dir>/scripts/personal_os.py add-task "project text" --type project
 python3 <skill_dir>/scripts/personal_os.py add-task "task text" --type habit
 python3 <skill_dir>/scripts/personal_os.py complete-task "task text，收获为xxx" --date YYYY-MM-DD
 python3 <skill_dir>/scripts/personal_os.py update-task "old task text" --new-task "new task text" --type scheduled --due-date YYYY-MM-DD
@@ -84,6 +85,7 @@ Use this skill when the user asks to:
 - `set_default_repo`: "记录 PersonalOS 位置", "设置默认 PersonalOS 仓库", "我的 PersonalOS 在这里"
 - `generate_daily`: "generate daily", "生成今日任务", "daily plan", "明天/今天的 Daily"
 - `add_task`: "add task", "新增任务", "记一条 Waiting", "加入长期项目", "加入自动化候选"
+- `add_project_task`: "添加长期任务", "添加长期项目", "作为 project", "作为长期任务", "加入长期项目"
 - `add_habit`: "作为 habit", "作为惯例", "作为习惯", "后续告诉你完成时更新状态", "每天/每周带入"
 - `complete_task`: "complete task", "完成任务", "mark done", "把 X 标记完成", "我完成了 X", "更新这个任务的状态"
 - `update_task`: "更新任务", "修改任务", "把任务改成", "改截止日期", "改成 schedule/today/habit/project"
@@ -200,6 +202,7 @@ The command validates that the target has the PersonalOS structure, then writes 
 5. Show diff and suggest commit.
 
 The Daily content must stay grounded in PersonalOS files and script output. Avoid generic coaching phrases such as "今日重点是先定义今天唯一最重要的产出" or "安排一个 60 到 90 分钟的启动执行块" unless those exact ideas are already present in the user's files.
+Daily files include a `近3天需要处理任务` section based on dated open tasks, and place `今日建议` after `今日新增任务` but before `今日复盘`. Suggestions should be grounded in the generated Daily content, including near-term tasks, today's tasks, Habit status, Waiting, Blocked, projects, and automation candidates.
 
 ### add_task
 
@@ -210,6 +213,14 @@ The Daily content must stay grounded in PersonalOS files and script output. Avoi
 5. For Project tasks, create/update the project and automatically run the `plan-project` draft flow immediately. Show the proposed subtask plan to the user for confirmation. Do not write the subtask checklist or scheduled tasks until the user confirms and you run `plan-project --confirm`.
 6. The `plan-project` draft should default to a confirmable checklist with concrete actions, due dates, and acceptance criteria. Avoid abstract phase-only skeletons unless they also name the specific action and deliverable.
 7. Show diff and suggest commit.
+
+For phrasing like "添加一个长期任务/长期项目" or "把 X 作为 project", classify it as an explicit Project request and run:
+
+```bash
+python3 <skill_dir>/scripts/personal_os.py add-task "project text" --type project
+```
+
+This creates or updates `projects/<slug>.md`, appends the project as a next action, and prints a project subtask plan draft. The draft is not written until the user confirms and `plan-project --confirm` is run.
 
 For phrasing like "调用 add task，将这个单词的学习作为 habit，后续我告诉你我完成了的时候，你同时帮我更新一下我这个任务的状态", classify it as an explicit Habit request and run:
 

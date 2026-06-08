@@ -29,11 +29,12 @@ All newly generated user-facing Markdown content should be written in Chinese by
 - 等待中
 - 阻塞项
 - 长期项目进展
-- 今日建议
+- 近3天需要处理任务
 - 今日任务清单
   - Habit
   - 其他任务
 - 今日新增任务
+- 今日建议
 - 今日复盘
 
 ## Project Required Fields
