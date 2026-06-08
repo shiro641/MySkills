@@ -52,12 +52,13 @@ All newly generated user-facing Markdown content should be written in Chinese by
 
 ## Schedule Entry Required Fields
 
-- checkbox status (`[ ]` or `[x]`)
 - 状态
 - 截止
 - 完成
 - 项目, when linked to a project
 - 子任务, when linked to a project subtask
+
+Schedule entries in `state/schedule.md` do not use checkbox markers. The `状态` field is the source of truth (`open`, `done`, etc.). Project subtask checklists may still use checkboxes as a project-local execution view.
 
 ## Automation Candidate Required Fields
 

@@ -272,6 +272,7 @@ def normalize_match_text(value: str) -> str:
 def strip_task_metadata(value: str) -> str:
     value = re.sub(r"\s*\|\s*.*$", "", value).strip()
     value = re.sub(r"^\s*-\s+\[[ xX]\]\s+", "", value).strip()
+    value = re.sub(r"^\s*-\s+", "", value).strip()
     return value
 
 
@@ -340,7 +341,7 @@ def append_unique_line(path: Path, line: str) -> None:
 
 def schedule_entry(task: str, due_date: dt.date, suffix: str = "") -> str:
     extra = suffix if not suffix or suffix.startswith(" | ") else f" | {suffix}"
-    return f"- [ ] {task} | 状态: open | 截止: {due_date.isoformat()} | 完成: {extra}"
+    return f"- {task} | 状态: open | 截止: {due_date.isoformat()} | 完成: {extra}"
 
 
 def ensure_daily(root: Path, day: dt.date) -> Path:
@@ -776,7 +777,7 @@ def plan_project(args: argparse.Namespace) -> None:
         )
         append_under_heading(path, "子任务清单", checklist)
         schedule_line = (
-            f"- [ ] {item.title} | 状态: open | 截止: {item.due_date.isoformat()} | "
+            f"- {item.title} | 状态: open | 截止: {item.due_date.isoformat()} | "
             f"完成:  | 项目: {project_title(path)} | 子任务: {task_id}"
         )
         append_unique_line(schedule_path(root), schedule_line)
@@ -1064,7 +1065,7 @@ def set_stat(path: Path, label: str, value: Union[int, str]) -> None:
 def promote_scheduled_for_day(root: Path, day: dt.date) -> None:
     today_file = today_path(root)
     for line in read(schedule_path(root)).splitlines():
-        if "- [ ]" not in line:
+        if not is_open_schedule_line(line):
             continue
         due = task_due_date(line)
         if due != day:
@@ -1224,7 +1225,7 @@ def near_term_tasks(root: Path, day: dt.date) -> list[str]:
     items: list[tuple[dt.date, str]] = []
     seen: set[tuple[dt.date, str]] = set()
     for line in iter_schedule_lines(root):
-        if not re.match(r"^\s*-\s+\[ \]\s+", line):
+        if not is_open_schedule_line(line):
             continue
         due = task_due_date(line)
         if not due or due < start:
@@ -1237,8 +1238,15 @@ def near_term_tasks(root: Path, day: dt.date) -> list[str]:
         items.append((due, task))
     items.sort(key=lambda item: (item[0], item[1]))
     selected = [(due, task) for due, task in items if due <= end]
-    if not selected:
-        selected = items[:3]
+    if len(selected) < 3:
+        selected_keys = set(selected)
+        for item in items:
+            if item in selected_keys:
+                continue
+            selected.append(item)
+            selected_keys.add(item)
+            if len(selected) >= 3:
+                break
     return [f"{due.isoformat()}：{task}" for due, task in selected]
 
 
@@ -1349,14 +1357,17 @@ def complete_task(args: argparse.Namespace) -> None:
         text = read(path)
         if not text:
             continue
-        new_text, count = re.subn(
-            r"(^\s*-\s+\[ \]\s+.*" + re.escape(task) + r".*$)",
-            lambda match: complete_line(match.group(1), day),
-            text,
-            flags=re.M | re.I,
-        )
-        if count == 0:
-            new_text, count = mark_fuzzy(text, needle, day)
+        if path.name == "schedule.md":
+            new_text, count = complete_schedule_text(text, task, day)
+        else:
+            new_text, count = re.subn(
+                r"(^\s*-\s+\[ \]\s+.*" + re.escape(task) + r".*$)",
+                lambda match: complete_line(match.group(1), day),
+                text,
+                flags=re.M | re.I,
+            )
+            if count == 0:
+                new_text, count = mark_fuzzy(text, needle, day)
         if count:
             path.write_text(new_text, encoding="utf-8")
             changed.append(path)
@@ -1396,6 +1407,21 @@ def complete_line(line: str, day: dt.date) -> str:
     return normalize_metadata_spacing(line)
 
 
+def complete_schedule_text(text: str, task: str, day: dt.date) -> tuple[str, int]:
+    lines = text.splitlines()
+    count = 0
+    for i, line in enumerate(lines):
+        if not is_open_schedule_line(line) or not matches_task_name(line, task):
+            continue
+        lines[i] = complete_line(line, day)
+        count += 1
+    return ("\n".join(lines) + "\n", count) if count else (text, 0)
+
+
+def is_open_schedule_line(line: str) -> bool:
+    return bool(re.match(r"^\s*-\s+", line)) and not re.search(r"\|\s*状态:\s*done\b", line, re.I)
+
+
 def normalize_metadata_spacing(line: str) -> str:
     parts = [part.strip() for part in line.split("|")]
     return " | ".join(part for part in parts if part)
@@ -1412,7 +1438,7 @@ def mark_fuzzy(text: str, needle: str, day: dt.date) -> tuple[str, int]:
 
 def sync_completed_schedule_to_projects(root: Path, schedule_text: str, task: str, day: dt.date) -> None:
     for line in schedule_text.splitlines():
-        if "- [x]" not in line or not matches_task_name(line, task):
+        if not re.search(r"\|\s*状态:\s*done\b", line, re.I) or not matches_task_name(line, task):
             continue
         project = project_ref_from_line(line)
         task_id = task_id_from_line(line)

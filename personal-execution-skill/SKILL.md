@@ -202,7 +202,7 @@ The command validates that the target has the PersonalOS structure, then writes 
 5. Show diff and suggest commit.
 
 The Daily content must stay grounded in PersonalOS files and script output. Avoid generic coaching phrases such as "今日重点是先定义今天唯一最重要的产出" or "安排一个 60 到 90 分钟的启动执行块" unless those exact ideas are already present in the user's files.
-Daily files include a `近期需要处理的任务` section based on open Scheduled tasks. This section should exclude today's tasks, first list all tasks due from tomorrow through the next 3 days, and if none exist, fall back to the 3 open Scheduled tasks with the nearest due dates. Place `今日建议` after `今日新增任务` but before `今日复盘`. Suggestions should be grounded in the generated Daily content, including near-term tasks, today's tasks, Habit status, Waiting, Blocked, projects, and automation candidates.
+Daily files include a `近期需要处理的任务` section based on open Scheduled tasks. This section should exclude today's tasks, first list all tasks due from tomorrow through the next 3 days, and if that yields fewer than 3 tasks, fill the list with later open Scheduled tasks by nearest due date until it has up to 3 tasks. Place `今日建议` after `今日新增任务` but before `今日复盘`. Suggestions should be grounded in the generated Daily content, including near-term tasks, today's tasks, Habit status, Waiting, Blocked, projects, and automation candidates.
 
 ### add_task
 
@@ -294,7 +294,7 @@ python3 <skill_dir>/scripts/personal_os.py plan-project "project name" --date YY
 ```
 
 Each generated scheduled subtask carries `项目:` and `子任务:` metadata so later `update-task` or confirmed `remove-task` operations can synchronize the project checklist.
-Schedule entries should carry `状态: open`, `截止: YYYY-MM-DD`, and `完成:`. When completed, update both `state/schedule.md` and the linked project subtask to `[x]`, `状态: done`, and `完成: YYYY-MM-DD`.
+Schedule entries should carry `状态: open`, `截止: YYYY-MM-DD`, and `完成:`. Do not use `[ ]` / `[x]` checkbox markers inside `state/schedule.md`; `状态` is the source of truth there. When completed, update `state/schedule.md` to `状态: done` and `完成: YYYY-MM-DD`, and update the linked project subtask checklist to `[x]`, `状态: done`, and `完成: YYYY-MM-DD`.
 
 ### remove_task
 
