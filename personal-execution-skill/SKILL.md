@@ -110,11 +110,11 @@ PersonalOS/
 ├── projects/
 │   └── .gitkeep
 ├── tasks/
-│   ├── today.md
-│   ├── scheduled.md
-│   ├── automation-candidates.md
-│   └── archive.md
+│   └── today.md
 ├── state/
+│   ├── schedule.md
+│   ├── automation-candidates.md
+│   ├── archive.md
 │   ├── waiting.md
 │   ├── blocked.md
 │   ├── habits.md
@@ -131,12 +131,12 @@ PersonalOS/
 
 ## Operating Rules
 
-1. Always read relevant files before editing: today's Daily, `inbox.md`, `tasks/*.md`, `state/waiting.md`, `state/blocked.md`, and relevant project files.
+1. Always read relevant files before editing: today's Daily, `inbox.md`, `tasks/today.md`, `state/*.md`, and relevant project files.
 2. Never overwrite user content. Append, update checklist markers, or add dated sections.
 3. Preserve Markdown headings and checkboxes.
 4. Use Intent First for `add_task`: if the user explicitly says the type, honor it.
 5. Only classify automatically when the user did not specify a type.
-6. Do not add suitable Codex automation work to manual todos. Route it to `tasks/automation-candidates.md` with Codex Prompt, execution steps, expected artifacts, and acceptance criteria.
+6. Do not add suitable Codex automation work to manual todos. Route it to `state/automation-candidates.md` with Codex Prompt, execution steps, expected artifacts, and acceptance criteria.
 7. After modifications, show `git diff --stat` and a focused `git diff`.
 8. At key points, suggest a commit. For bootstrap, create the initial commit automatically.
 9. Prefer Chinese for generated content and user-facing summaries. Preserve existing user-authored language when editing old files unless the operation is regenerating a template/report.
@@ -149,11 +149,11 @@ If explicitly specified, route exactly as requested:
 
 - 今日任务 / Today Task -> today's Daily and `tasks/today.md`
 - 长期项目 / Project -> `projects/<slug>.md`
-- 定时任务 / 截止日期任务 / Scheduled Task -> `tasks/scheduled.md`
-- Codex 自动化任务 / Automation Candidate -> `tasks/automation-candidates.md`
+- 定时任务 / 截止日期任务 / Scheduled Task -> `state/schedule.md`
+- Codex 自动化任务 / Automation Candidate -> `state/automation-candidates.md`
 - Waiting -> `state/waiting.md`
 - Blocked -> `state/blocked.md`
-- 归档记录 / Archive -> `tasks/archive.md`
+- 归档记录 / Archive -> `state/archive.md`
 - 习惯 / 定式任务 / Habit -> `state/habits.md`
 
 ## Automatic Classification
@@ -162,7 +162,7 @@ When intent is not explicit:
 
 - Waiting: task depends on a named person, reply, approval, delivery, vendor, or external owner.
 - Blocked: task cannot proceed because of missing access, decision, dependency, error, or unresolved risk.
-- Scheduled Task: task has a clear due date, execution date, reminder date, or time-bound deadline. Store the date/deadline in `tasks/scheduled.md` so it can be surfaced later.
+- Scheduled Task: task has a clear due date, execution date, reminder date, or time-bound deadline. Store the date/deadline in `state/schedule.md` so it can be surfaced later.
 - Habit: task describes a repeated behavior to cultivate or track over time, especially "daily", "weekly", "monthly", "每天", "每周", "每月", "定式", or "习惯", and should keep frequency, auto-include, completion log, streak, and completion rate in `state/habits.md`.
 - Automation Candidate: task is file/code/data/document/email/search/report generation that Codex can likely execute end-to-end.
 - Project: task implies a multi-step outcome lasting more than one day or mentions project, milestone, launch, build, research, design, strategy.
@@ -255,7 +255,7 @@ Use this workflow when the user wants to change task content, type, or time.
 python3 <skill_dir>/scripts/personal_os.py update-task "old task text" --new-task "new task text" --type scheduled --due-date YYYY-MM-DD
 ```
 
-- Changing a Today task to a future due date moves it to `tasks/scheduled.md`.
+- Changing a Today task to a future due date moves it to `state/schedule.md`.
 - Changing a Scheduled task to today's date also adds it to `tasks/today.md` so Daily generation can surface it.
 - Daily generation also promotes scheduled tasks whose due date is today into `tasks/today.md`.
 - When a Scheduled task is linked to a project subtask (`项目:` and `子任务:` metadata), updates or removals sync the project `子任务清单`.
@@ -287,13 +287,14 @@ python3 <skill_dir>/scripts/personal_os.py plan-project "project name" --date YY
    - each item should include a due date
    - each item should include a clear acceptance criterion
    - when the project type is inferable from the title, prefer a domain-relevant breakdown over a generic stage skeleton
-3. After the user confirms, write the checklist into the project and add each subtask to `tasks/scheduled.md`:
+3. After the user confirms, write the checklist into the project and add each subtask to `state/schedule.md`:
 
 ```bash
 python3 <skill_dir>/scripts/personal_os.py plan-project "project name" --date YYYY-MM-DD --confirm
 ```
 
 Each generated scheduled subtask carries `项目:` and `子任务:` metadata so later `update-task` or confirmed `remove-task` operations can synchronize the project checklist.
+Schedule entries should carry `状态: open`, `截止: YYYY-MM-DD`, and `完成:`. When completed, update both `state/schedule.md` and the linked project subtask to `[x]`, `状态: done`, and `完成: YYYY-MM-DD`.
 
 ### remove_task
 
@@ -305,7 +306,7 @@ Use this workflow when the user says "remove xxx task", "删除任务 xxx", "移
 python3 <skill_dir>/scripts/personal_os.py remove-task "task text" --date YYYY-MM-DD
 ```
 
-2. Show the numbered candidate list to the user. Candidates can come from today's Daily, `tasks/today.md`, `tasks/scheduled.md`, `tasks/automation-candidates.md`, `state/waiting.md`, `state/blocked.md`, `state/habits.md`, and `projects/*.md`.
+2. Show the numbered candidate list to the user. Candidates can come from today's Daily, `tasks/today.md`, `state/schedule.md`, `state/automation-candidates.md`, `state/archive.md`, `state/waiting.md`, `state/blocked.md`, `state/habits.md`, and `projects/*.md`.
 3. Do not delete anything until the user explicitly confirms one or more candidate numbers, or confirms all candidates.
 4. After confirmation, run:
 
@@ -333,7 +334,7 @@ python3 <skill_dir>/scripts/personal_os.py remove-task "task text" --date YYYY-M
 
 ### habit_manager
 
-Habit support is reserved in `state/habits.md` and `templates/habit.md`. Treat habits as repeated behaviors with frequency, auto-include setting, completion log, streak, and completion rate. Do not route a habit to `tasks/scheduled.md` merely because it repeats; use Scheduled only when the item is anchored to a due date, execution date, or reminder date.
+Habit support is reserved in `state/habits.md` and `templates/habit.md`. Treat habits as repeated behaviors with frequency, auto-include setting, completion log, streak, and completion rate. Do not route a habit to `state/schedule.md` merely because it repeats; use Scheduled only when the item is anchored to a due date, execution date, or reminder date.
 
 ## Validation
 

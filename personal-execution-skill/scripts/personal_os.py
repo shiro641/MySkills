@@ -154,6 +154,22 @@ def ensure_repo(root: Path) -> None:
             raise SystemExit(f"Not a PersonalOS repository, missing {dirname}: {root}")
 
 
+def today_path(root: Path) -> Path:
+    return root / "tasks" / "today.md"
+
+
+def schedule_path(root: Path) -> Path:
+    return root / "state" / "schedule.md"
+
+
+def automation_path(root: Path) -> Path:
+    return root / "state" / "automation-candidates.md"
+
+
+def archive_path(root: Path) -> Path:
+    return root / "state" / "archive.md"
+
+
 def read(path: Path) -> str:
     return path.read_text(encoding="utf-8") if path.exists() else ""
 
@@ -320,6 +336,11 @@ def append_unique_line(path: Path, line: str) -> None:
     if line.strip() in {existing.strip() for existing in text.splitlines()}:
         return
     append(path, line)
+
+
+def schedule_entry(task: str, due_date: dt.date, suffix: str = "") -> str:
+    extra = suffix if not suffix or suffix.startswith(" | ") else f" | {suffix}"
+    return f"- [ ] {task} | 状态: open | 截止: {due_date.isoformat()} | 完成: {extra}"
 
 
 def ensure_daily(root: Path, day: dt.date) -> Path:
@@ -559,10 +580,10 @@ def bootstrap(args: argparse.Namespace) -> None:
     date = parse_date(args.date).isoformat()
     write_new(root / "README.md", repo_readme(root.name))
     write_new(root / "inbox.md", "# 收件箱\n")
-    write_new(root / "tasks" / "today.md", "# 今日任务\n")
-    write_new(root / "tasks" / "scheduled.md", "# 定时任务\n")
-    write_new(root / "tasks" / "archive.md", "# 归档\n")
-    write_new(root / "tasks" / "automation-candidates.md", "# Automation Candidates\n")
+    write_new(today_path(root), "# 今日任务\n")
+    write_new(schedule_path(root), "# 定时任务\n")
+    write_new(archive_path(root), "# 归档\n")
+    write_new(automation_path(root), "# Automation Candidates\n")
     write_new(root / "state" / "waiting.md", "# 等待中\n")
     write_new(root / "state" / "blocked.md", "# 阻塞项\n")
     write_new(root / "state" / "habits.md", "# 习惯\n")
@@ -598,7 +619,7 @@ def repo_readme(name: str) -> str:
 
 1. 把原始输入收进 `inbox.md`。
 2. 在 `dailies/` 生成或更新当天日报。
-3. 把事项路由到今日任务、项目、等待中、阻塞项、定时任务、自动化候选、归档或习惯。
+3. 把事项路由到今日执行清单、项目、等待中、阻塞项、日程、自动化候选、归档或习惯。
 4. 在原位置标记完成，并记录到 `logs/execution-log.md`。
 5. 每周巡检项目，并提交确认后的变更。
 
@@ -607,8 +628,8 @@ def repo_readme(name: str) -> str:
 - `dailies/`: 每日计划与复盘。
 - `weekly-reviews/`: 周复盘。
 - `projects/`: 长期项目状态。
-- `tasks/`: 今日、定时、自动化候选和归档台账。
-- `state/`: 等待中、阻塞项、习惯和统计。
+- `tasks/`: 今日执行清单与完成面。
+- `state/`: 日程、自动化候选、归档、等待中、阻塞项、习惯和统计。
 - `logs/`: 执行历史。
 - `templates/`: 标准 Markdown 模板。
 """
@@ -650,7 +671,7 @@ def add_task(args: argparse.Namespace) -> None:
         print("\n项目子任务清单尚未写入。确认无误后运行:")
         print(f"python3 {Path(__file__).resolve()} plan-project {quote_arg(task)} --date {date.isoformat()} --confirm")
     elif task_type == "scheduled":
-        append(root / "tasks" / "scheduled.md", f"- [ ] {task} | 添加: {date.isoformat()}")
+        append(schedule_path(root), schedule_entry(task, date))
     elif task_type == "automation":
         add_automation_candidate(root, task, date)
     elif task_type == "waiting":
@@ -658,7 +679,7 @@ def add_task(args: argparse.Namespace) -> None:
     elif task_type == "blocked":
         append(root / "state" / "blocked.md", f"- [ ] {task} | 开始: {date.isoformat()}")
     elif task_type == "archive":
-        append(root / "tasks" / "archive.md", f"- {date.isoformat()} {task}")
+        append(archive_path(root), f"- {date.isoformat()} {task}")
     elif task_type == "habit":
         append(root / "state" / "habits.md", "\n" + render_template("habit.md", habit_name=task))
         refresh_habit_stats(root)
@@ -667,7 +688,7 @@ def add_task(args: argparse.Namespace) -> None:
 
 
 def add_today_task(root: Path, task: str, date: dt.date) -> None:
-    append(root / "tasks" / "today.md", f"- [ ] {task} | 添加: {date.isoformat()}")
+    append(today_path(root), f"- [ ] {task} | 添加: {date.isoformat()}")
     daily = root / "dailies" / f"{date.isoformat()}.md"
     if not daily.exists():
         daily.write_text(render_daily(root, date), encoding="utf-8")
@@ -750,19 +771,19 @@ def plan_project(args: argparse.Namespace) -> None:
     for index, item in enumerate(items, start=1):
         task_id = f"{slugify(project)}-{index}"
         checklist = (
-            f"- [ ] {item.title} | 截止: {item.due_date.isoformat()} | "
-            f"验收: {item.acceptance} | 子任务: {task_id}"
+            f"- [ ] {item.title} | 状态: open | 截止: {item.due_date.isoformat()} | "
+            f"完成:  | 验收: {item.acceptance} | 子任务: {task_id}"
         )
         append_under_heading(path, "子任务清单", checklist)
         schedule_line = (
-            f"- [ ] {item.title} | 截止: {item.due_date.isoformat()} | "
-            f"项目: {project_title(path)} | 子任务: {task_id}"
+            f"- [ ] {item.title} | 状态: open | 截止: {item.due_date.isoformat()} | "
+            f"完成:  | 项目: {project_title(path)} | 子任务: {task_id}"
         )
-        append_unique_line(root / "tasks" / "scheduled.md", schedule_line)
+        append_unique_line(schedule_path(root), schedule_line)
     replace_field(path, "最后更新", start.isoformat())
     seed_next_actions_from_plan(path, items)
     seed_milestones_from_plan(path, items)
-    print(f"已写入项目拆分并同步到定时任务: {path}")
+    print(f"已写入项目拆分并同步到 state/schedule.md: {path}")
     print_diff(root)
 
 
@@ -993,7 +1014,7 @@ def add_automation_candidate(root: Path, task: str, date: dt.date) -> None:
         source_task=task,
         codex_prompt=f"端到端完成这个任务：{task}。检查相关文件，做必要修改，验证结果，并总结产出。",
     )
-    append(root / "tasks" / "automation-candidates.md", "\n" + content)
+    append(automation_path(root), "\n" + content)
     increment_stat(root / "state" / "stats.md", "已创建自动化候选数")
 
 
@@ -1041,16 +1062,27 @@ def set_stat(path: Path, label: str, value: Union[int, str]) -> None:
 
 
 def promote_scheduled_for_day(root: Path, day: dt.date) -> None:
-    scheduled = root / "tasks" / "scheduled.md"
-    today_path = root / "tasks" / "today.md"
-    for line in read(scheduled).splitlines():
+    today_file = today_path(root)
+    for line in read(schedule_path(root)).splitlines():
         if "- [ ]" not in line:
             continue
         due = task_due_date(line)
         if due != day:
             continue
         task = strip_task_metadata(line)
-        append_unique_line(today_path, f"- [ ] {task} | 来源: scheduled | 日期: {day.isoformat()}")
+        append_unique_line(today_file, f"- [ ] {task} | 来源: scheduled | 日期: {day.isoformat()}")
+
+
+def iter_schedule_lines(root: Path) -> list[str]:
+    return read(schedule_path(root)).splitlines()
+
+
+def iter_automation_text(root: Path) -> str:
+    return read(automation_path(root))
+
+
+def iter_archive_text(root: Path) -> str:
+    return read(archive_path(root))
 
 
 def daily(args: argparse.Namespace) -> None:
@@ -1084,12 +1116,12 @@ def render_daily(root: Path, day: dt.date) -> str:
     yesterday = read(yesterday_path)
     done = checklist_items(yesterday, checked=True) or ["还没有记录已完成事项。"]
     yesterday_undone = normalize_task_list(checklist_items(yesterday, checked=False))
-    today_open_tasks = normalize_task_list(checklist_items(read(root / "tasks" / "today.md"), checked=False))
+    today_open_tasks = normalize_task_list(checklist_items(read(today_path(root)), checked=False))
     undone = yesterday_undone or today_open_tasks or ["没有需要结转的未完成事项。"]
     waiting = checklist_items(read(root / "state" / "waiting.md"), checked=False) or bullet_lines(read(root / "state" / "waiting.md")) or ["当前没有等待中事项。"]
     blocked = checklist_items(read(root / "state" / "blocked.md"), checked=False) or bullet_lines(read(root / "state" / "blocked.md")) or ["当前没有阻塞项。"]
     projects = project_summaries(root)
-    automations = checklist_items(read(root / "tasks" / "automation-candidates.md"), checked=False)
+    automations = checklist_items(iter_automation_text(root), checked=False)
     habits = habit_items(root, day)
     today_tasks = normalize_task_list([*yesterday_undone, *today_open_tasks])
     near_tasks = near_term_tasks(root, day)
@@ -1174,7 +1206,7 @@ def tasks_added_on(root: Path, day: dt.date) -> list[str]:
     tasks: list[str] = []
     seen: set[str] = set()
     marker = f"添加: {day.isoformat()}"
-    for line in read(root / "tasks" / "today.md").splitlines():
+    for line in read(today_path(root)).splitlines():
         if not re.match(r"^\s*-\s+\[ \]\s+", line) or marker not in line:
             continue
         task = strip_task_metadata(line)
@@ -1191,7 +1223,7 @@ def near_term_tasks(root: Path, day: dt.date) -> list[str]:
     end = day + dt.timedelta(days=3)
     items: list[tuple[dt.date, str]] = []
     seen: set[tuple[dt.date, str]] = set()
-    for line in read(root / "tasks" / "scheduled.md").splitlines():
+    for line in iter_schedule_lines(root):
         if not re.match(r"^\s*-\s+\[ \]\s+", line):
             continue
         due = task_due_date(line)
@@ -1304,24 +1336,32 @@ def complete_task(args: argparse.Namespace) -> None:
     task = strip_learning_clause(task)
     files = [
         root / "dailies" / f"{day.isoformat()}.md",
-        root / "tasks" / "today.md",
+        today_path(root),
         root / "state" / "waiting.md",
         root / "state" / "blocked.md",
-        root / "tasks" / "scheduled.md",
-        root / "tasks" / "automation-candidates.md",
-    ] + sorted((root / "projects").glob("*.md"))
+        schedule_path(root),
+        automation_path(root),
+    ]
+    files.extend(sorted((root / "projects").glob("*.md")))
     changed = []
     needle = task.lower()
     for path in files:
         text = read(path)
         if not text:
             continue
-        new_text, count = re.subn(r"(^\s*-\s+\[ \]\s+.*" + re.escape(task) + r".*$)", mark_done, text, flags=re.M | re.I)
+        new_text, count = re.subn(
+            r"(^\s*-\s+\[ \]\s+.*" + re.escape(task) + r".*$)",
+            lambda match: complete_line(match.group(1), day),
+            text,
+            flags=re.M | re.I,
+        )
         if count == 0:
-            new_text, count = mark_fuzzy(text, needle)
+            new_text, count = mark_fuzzy(text, needle, day)
         if count:
             path.write_text(new_text, encoding="utf-8")
             changed.append(path)
+            if path.name == "schedule.md":
+                sync_completed_schedule_to_projects(root, new_text, task, day)
     habit_path, habit_matched, habit_added = complete_habit(root, task, day)
     if habit_path and habit_path not in changed:
         changed.append(habit_path)
@@ -1343,17 +1383,57 @@ def complete_task(args: argparse.Namespace) -> None:
     print_diff(root)
 
 
-def mark_done(match: re.Match[str]) -> str:
-    return match.group(1).replace("[ ]", "[x]", 1)
+def complete_line(line: str, day: dt.date) -> str:
+    line = line.replace("[ ]", "[x]", 1)
+    if re.search(r"\|\s*状态:\s*[^|]+", line):
+        line = re.sub(r"\|\s*状态:\s*[^|]+", "| 状态: done ", line, count=1)
+    elif "|" in line:
+        line += " | 状态: done"
+    if re.search(r"\|\s*完成:\s*[^|]*", line):
+        line = re.sub(r"\|\s*完成:\s*[^|]*", f"| 完成: {day.isoformat()} ", line, count=1)
+    elif "|" in line:
+        line += f" | 完成: {day.isoformat()}"
+    return normalize_metadata_spacing(line)
 
 
-def mark_fuzzy(text: str, needle: str) -> tuple[str, int]:
+def normalize_metadata_spacing(line: str) -> str:
+    parts = [part.strip() for part in line.split("|")]
+    return " | ".join(part for part in parts if part)
+
+
+def mark_fuzzy(text: str, needle: str, day: dt.date) -> tuple[str, int]:
     lines = text.splitlines()
     for i, line in enumerate(lines):
         if "- [ ]" in line and needle in line.lower():
-            lines[i] = line.replace("[ ]", "[x]", 1)
+            lines[i] = complete_line(line, day)
             return "\n".join(lines) + "\n", 1
     return text, 0
+
+
+def sync_completed_schedule_to_projects(root: Path, schedule_text: str, task: str, day: dt.date) -> None:
+    for line in schedule_text.splitlines():
+        if "- [x]" not in line or not matches_task_name(line, task):
+            continue
+        project = project_ref_from_line(line)
+        task_id = task_id_from_line(line)
+        if not project or not task_id:
+            continue
+        project_path = find_project_path(root, project)
+        if project_path.exists():
+            sync_project_subtask_complete(project_path, task_id, day)
+
+
+def sync_project_subtask_complete(project_path: Path, task_id: str, day: dt.date) -> None:
+    lines = []
+    changed = False
+    for line in read(project_path).splitlines():
+        if task_id not in line or "- [ ]" not in line:
+            lines.append(line)
+            continue
+        lines.append(complete_line(line, day))
+        changed = True
+    if changed:
+        project_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
 
 
 def remove_task(args: argparse.Namespace) -> None:
@@ -1410,9 +1490,10 @@ def find_remove_candidates(root: Path, query: str, day: dt.date) -> list[RemoveC
 def current_task_pool_paths(root: Path, day: dt.date) -> list[Path]:
     paths = [
         root / "dailies" / f"{day.isoformat()}.md",
-        root / "tasks" / "today.md",
-        root / "tasks" / "scheduled.md",
-        root / "tasks" / "automation-candidates.md",
+        today_path(root),
+        schedule_path(root),
+        automation_path(root),
+        archive_path(root),
         root / "state" / "waiting.md",
         root / "state" / "blocked.md",
         root / "state" / "habits.md",
@@ -1527,7 +1608,7 @@ def delete_remove_candidates(candidates: list[RemoveCandidate]) -> None:
 
 
 def sync_project_subtask_delete(source_path: Path, line: str) -> None:
-    if source_path.name != "scheduled.md":
+    if source_path.name != "schedule.md":
         return
     project = project_ref_from_line(line)
     task_id = task_id_from_line(line)
@@ -1543,7 +1624,7 @@ def sync_project_subtask_delete(source_path: Path, line: str) -> None:
 
 
 def sync_project_subtask_update(source_path: Path, old_line: str, new_task: str, new_date: Optional[dt.date]) -> None:
-    if source_path.name != "scheduled.md":
+    if source_path.name != "schedule.md":
         return
     project = project_ref_from_line(old_line)
     task_id = task_id_from_line(old_line)
@@ -1585,7 +1666,7 @@ def update_task(args: argparse.Namespace) -> None:
     old_line = read(candidate.path).splitlines()[candidate.start_line - 1]
     delete_remove_candidates([candidate])
     add_updated_task(root, new_task, new_type, new_date, day, old_line)
-    if candidate.path.name == "scheduled.md":
+    if candidate.path.name == "schedule.md":
         sync_project_subtask_update(candidate.path, old_line, new_task, new_date)
     print(f"已更新任务: {query} -> {new_task} ({new_type})")
     print_diff(root)
@@ -1594,7 +1675,7 @@ def update_task(args: argparse.Namespace) -> None:
 def source_task_type(path: Path) -> str:
     if path.name == "today.md" or path.parent.name == "dailies":
         return "today"
-    if path.name == "scheduled.md":
+    if path.name == "schedule.md":
         return "scheduled"
     if path.name == "habits.md":
         return "habit"
@@ -1613,7 +1694,7 @@ def add_updated_task(root: Path, task: str, task_type: str, due_date: Optional[d
     if task_type == "today" and due_date and due_date != day:
         task_type = "scheduled"
     if task_type == "scheduled" and due_date == day:
-        append_unique_line(root / "tasks" / "today.md", f"- [ ] {task} | 来源: scheduled | 日期: {day.isoformat()}")
+        append_unique_line(today_path(root), f"- [ ] {task} | 来源: scheduled | 日期: {day.isoformat()}")
     if task_type == "today":
         add_today_task(root, task, day)
     elif task_type == "scheduled":
@@ -1625,7 +1706,7 @@ def add_updated_task(root: Path, task: str, task_type: str, due_date: Optional[d
             suffix += f" | 项目: {project}"
         if task_id:
             suffix += f" | 子任务: {task_id}"
-        append_unique_line(root / "tasks" / "scheduled.md", f"- [ ] {task} | 截止: {date_text}{suffix}")
+        append_unique_line(schedule_path(root), schedule_entry(task, dt.date.fromisoformat(date_text), suffix))
     elif task_type == "habit":
         append(root / "state" / "habits.md", "\n" + render_template("habit.md", habit_name=task))
         refresh_habit_stats(root)
@@ -1638,7 +1719,7 @@ def add_updated_task(root: Path, task: str, task_type: str, due_date: Optional[d
     elif task_type == "automation":
         add_automation_candidate(root, task, day)
     else:
-        append_unique_line(root / "tasks" / "archive.md", f"- {day.isoformat()} {task}")
+        append_unique_line(archive_path(root), f"- {day.isoformat()} {task}")
 
 
 def quote_arg(value: str) -> str:
@@ -1672,7 +1753,7 @@ def render_weekly(root: Path, start: dt.date) -> str:
     waiting = checklist_items(read(root / "state" / "waiting.md"), checked=False) or ["当前没有等待中事项。"]
     blocked = checklist_items(read(root / "state" / "blocked.md"), checked=False) or ["当前没有阻塞项。"]
     projects = project_summaries(root) or ["还没有记录项目进展。"]
-    automation_count = len(re.findall(r"^## \d{4}-\d{2}-\d{2}", read(root / "tasks" / "automation-candidates.md"), re.M))
+    automation_count = len(re.findall(r"^## \d{4}-\d{2}-\d{2}", read(automation_path(root)), re.M))
     return f"""# 周复盘 - {label}
 
 ## 本周完成

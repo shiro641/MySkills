@@ -22,7 +22,7 @@ After bootstrap, use the recorded default PersonalOS repository from `<skill_dir
 When adding a task, explicit user intent wins over classification. Examples:
 
 - "Add as Waiting: 等待对方发送发票" goes to `state/waiting.md`.
-- "Make this a Codex automation task: produce the report" goes to `tasks/automation-candidates.md`.
+- "Make this a Codex automation task: produce the report" goes to `state/automation-candidates.md`.
 - "Add a long-term project: relaunch website" creates or updates a project file.
 
 Only classify automatically if no explicit type is present.
@@ -54,7 +54,7 @@ For project progress updates, use `update-project`. It extracts progress, milest
 
 For new long-term tasks/projects, automatically show a proposed subtask checklist before writing it. When `add-task` creates or updates a Project, it must immediately run the `plan-project` draft flow without `--confirm` and include that checklist in the response. Run `plan-project --confirm` only after the user accepts the checklist.
 
-Confirmed project subtasks are written to the project `子任务清单` and to `tasks/scheduled.md` with `项目:` and `子任务:` metadata. Later `update-task` and confirmed `remove-task` operations use that metadata to keep the project checklist synchronized with scheduled task changes.
+Confirmed project subtasks are written to the project `子任务清单` and to `state/schedule.md` with `项目:` and `子任务:` metadata. Later `update-task` and confirmed `remove-task` operations use that metadata to keep the project checklist synchronized with scheduled task changes.
 
 ## Task Updates And Type Flow
 

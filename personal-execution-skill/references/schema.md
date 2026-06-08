@@ -11,10 +11,10 @@ All newly generated user-facing Markdown content should be written in Chinese by
 - `dailies/YYYY-MM-DD.md`: one daily execution file per date.
 - `weekly-reviews/YYYY-Www.md`: weekly review for ISO week.
 - `projects/*.md`: one long-term project per file.
-- `tasks/today.md`: rolling today task ledger.
-- `tasks/scheduled.md`: tasks with due dates, execution dates, reminder dates, or time-bound deadlines.
-- `tasks/automation-candidates.md`: Codex automation candidates.
-- `tasks/archive.md`: completed or historical records.
+- `tasks/today.md`: today's execution ledger and completion surface.
+- `state/schedule.md`: tasks with due dates, execution dates, reminder dates, or time-bound deadlines.
+- `state/automation-candidates.md`: Codex automation candidates.
+- `state/archive.md`: completed or historical records.
 - `state/waiting.md`: external-owner Waiting items.
 - `state/blocked.md`: blocked work and unblock criteria.
 - `state/habits.md`: habit definitions and future completion records.
@@ -49,6 +49,15 @@ All newly generated user-facing Markdown content should be written in Chinese by
 - 阻塞项
 - 子任务清单
 - 复盘笔记
+
+## Schedule Entry Required Fields
+
+- checkbox status (`[ ]` or `[x]`)
+- 状态
+- 截止
+- 完成
+- 项目, when linked to a project
+- 子任务, when linked to a project subtask
 
 ## Automation Candidate Required Fields
 
