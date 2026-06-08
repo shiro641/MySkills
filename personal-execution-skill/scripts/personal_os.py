@@ -220,11 +220,14 @@ def habit_items(root: Path, day: dt.date) -> list[tuple[str, bool]]:
 
 
 def extract_completion_text(text: str) -> str:
+    parts: list[str] = []
     inline_match = re.search(r"^-\s*完成记录:\s*(.*?)$", text, re.M)
     if inline_match:
-        return inline_match.group(1)
+        parts.append(inline_match.group(1))
     section_match = re.search(r"^###\s+完成记录\s*\n(.*?)(?=^###\s+|\Z)", text, re.M | re.S)
-    return section_match.group(1) if section_match else ""
+    if section_match:
+        parts.append(section_match.group(1))
+    return "\n".join(parts)
 
 
 def habit_blocks(text: str) -> list[tuple[re.Match[str], str, str]]:
@@ -1080,14 +1083,17 @@ def render_daily(root: Path, day: dt.date) -> str:
     yesterday_path = root / "dailies" / f"{(day - dt.timedelta(days=1)).isoformat()}.md"
     yesterday = read(yesterday_path)
     done = checklist_items(yesterday, checked=True) or ["还没有记录已完成事项。"]
-    undone = checklist_items(yesterday, checked=False) or checklist_items(read(root / "tasks" / "today.md"), checked=False) or ["没有需要结转的未完成事项。"]
+    yesterday_undone = normalize_task_list(checklist_items(yesterday, checked=False))
+    today_open_tasks = normalize_task_list(checklist_items(read(root / "tasks" / "today.md"), checked=False))
+    undone = yesterday_undone or today_open_tasks or ["没有需要结转的未完成事项。"]
     waiting = checklist_items(read(root / "state" / "waiting.md"), checked=False) or bullet_lines(read(root / "state" / "waiting.md")) or ["当前没有等待中事项。"]
     blocked = checklist_items(read(root / "state" / "blocked.md"), checked=False) or bullet_lines(read(root / "state" / "blocked.md")) or ["当前没有阻塞项。"]
     projects = project_summaries(root)
     automations = checklist_items(read(root / "tasks" / "automation-candidates.md"), checked=False)
     habits = habit_items(root, day)
-    today_tasks = [item for item in undone if not item.startswith("没有需要结转")]
+    today_tasks = normalize_task_list([*yesterday_undone, *today_open_tasks])
     near_tasks = near_term_tasks(root, day)
+    new_tasks = tasks_added_on(root, day)
     suggestions = render_daily_suggestions(
         near_tasks=near_tasks,
         today_tasks=today_tasks,
@@ -1119,9 +1125,9 @@ def render_daily(root: Path, day: dt.date) -> str:
 
 {as_bullets(projects or ["还没有记录项目进展。"])}
 
-## 近3天需要处理任务
+## 近期需要处理的任务
 
-{as_bullets(near_tasks or ["近3天没有记录需要处理的任务。"])}
+{as_bullets(near_tasks or ["近期没有记录需要处理的任务。"])}
 
 ## 今日任务清单
 
@@ -1135,7 +1141,7 @@ def render_daily(root: Path, day: dt.date) -> str:
 
 ## 今日新增任务
 
-- 暂无。
+{as_checklist(new_tasks) or "- 暂无。"}
 
 ## 今日建议
 
@@ -1149,30 +1155,59 @@ def render_daily(root: Path, day: dt.date) -> str:
 """
 
 
+def normalize_task_list(items: list[str]) -> list[str]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        task = strip_task_metadata(item)
+        if not task or task.startswith("没有需要结转"):
+            continue
+        key = normalize_match_text(task)
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append(task)
+    return normalized
+
+
+def tasks_added_on(root: Path, day: dt.date) -> list[str]:
+    tasks: list[str] = []
+    seen: set[str] = set()
+    marker = f"添加: {day.isoformat()}"
+    for line in read(root / "tasks" / "today.md").splitlines():
+        if not re.match(r"^\s*-\s+\[ \]\s+", line) or marker not in line:
+            continue
+        task = strip_task_metadata(line)
+        key = normalize_match_text(task)
+        if key in seen:
+            continue
+        seen.add(key)
+        tasks.append(task)
+    return tasks
+
+
 def near_term_tasks(root: Path, day: dt.date) -> list[str]:
+    start = day + dt.timedelta(days=1)
     end = day + dt.timedelta(days=3)
-    sources = [
-        root / "tasks" / "scheduled.md",
-        root / "tasks" / "today.md",
-        root / "dailies" / f"{day.isoformat()}.md",
-    ]
     items: list[tuple[dt.date, str]] = []
     seen: set[tuple[dt.date, str]] = set()
-    for path in sources:
-        for line in read(path).splitlines():
-            if not re.match(r"^\s*-\s+\[ \]\s+", line):
-                continue
-            due = task_due_date(line)
-            if not due or due < day or due > end:
-                continue
-            task = strip_task_metadata(line)
-            key = (due, task)
-            if key in seen:
-                continue
-            seen.add(key)
-            items.append((due, task))
+    for line in read(root / "tasks" / "scheduled.md").splitlines():
+        if not re.match(r"^\s*-\s+\[ \]\s+", line):
+            continue
+        due = task_due_date(line)
+        if not due or due < start:
+            continue
+        task = strip_task_metadata(line)
+        key = (due, task)
+        if key in seen:
+            continue
+        seen.add(key)
+        items.append((due, task))
     items.sort(key=lambda item: (item[0], item[1]))
-    return [f"{due.isoformat()}：{task}" for due, task in items]
+    selected = [(due, task) for due, task in items if due <= end]
+    if not selected:
+        selected = items[:3]
+    return [f"{due.isoformat()}：{task}" for due, task in selected]
 
 
 def render_daily_suggestions(
@@ -1192,7 +1227,7 @@ def render_daily_suggestions(
     if active_blocked:
         suggestions.append(f"先处理阻塞项“{short_task(active_blocked[0])}”，把卡点拆成一个可执行的解阻动作或明确需要谁来决策。")
     if near_tasks:
-        suggestions.append(f"近3天优先推进“{short_task(near_tasks[0])}”，先产出一个可验收的小结果，再处理低优先级事项。")
+        suggestions.append(f"近期优先推进“{short_task(near_tasks[0])}”，先产出一个可验收的小结果，再处理低优先级事项。")
     if today_tasks:
         suggestions.append(f"今日其他任务从“{short_task(today_tasks[0])}”开始，建议先用 25 到 45 分钟完成第一步，避免只停留在待办列表里。")
     if open_habits:
@@ -1202,7 +1237,7 @@ def render_daily_suggestions(
     if automations:
         suggestions.append(f"自动化候选里有 {len(automations)} 项开放任务，适合挑一项交给 Codex 拆步骤或直接执行，减少人工任务池压力。")
     if projects and not near_tasks:
-        suggestions.append(f"长期项目当前没有近3天明确截止项，建议从“{short_task(projects[0])}”反推出一个今天能完成的下一步。")
+        suggestions.append(f"长期项目当前没有近期明确截止项，建议从“{short_task(projects[0])}”反推出一个今天能完成的下一步。")
     if not suggestions:
         suggestions.append("今天任务池较轻，建议补充一个明确产出型任务，或做一次收件箱清理，把新事项路由到 Today、Scheduled、Project 或 Habit。")
     return suggestions[:5]

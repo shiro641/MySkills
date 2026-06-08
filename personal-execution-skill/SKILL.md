@@ -202,7 +202,7 @@ The command validates that the target has the PersonalOS structure, then writes 
 5. Show diff and suggest commit.
 
 The Daily content must stay grounded in PersonalOS files and script output. Avoid generic coaching phrases such as "今日重点是先定义今天唯一最重要的产出" or "安排一个 60 到 90 分钟的启动执行块" unless those exact ideas are already present in the user's files.
-Daily files include a `近3天需要处理任务` section based on dated open tasks, and place `今日建议` after `今日新增任务` but before `今日复盘`. Suggestions should be grounded in the generated Daily content, including near-term tasks, today's tasks, Habit status, Waiting, Blocked, projects, and automation candidates.
+Daily files include a `近期需要处理的任务` section based on open Scheduled tasks. This section should exclude today's tasks, first list all tasks due from tomorrow through the next 3 days, and if none exist, fall back to the 3 open Scheduled tasks with the nearest due dates. Place `今日建议` after `今日新增任务` but before `今日复盘`. Suggestions should be grounded in the generated Daily content, including near-term tasks, today's tasks, Habit status, Waiting, Blocked, projects, and automation candidates.
 
 ### add_task
 
