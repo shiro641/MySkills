@@ -1112,10 +1112,60 @@ def preserve_daily_review(new_content: str, old_content: str) -> str:
     return pattern.sub(lambda match: match.group(1) + old_review + "\n", new_content, count=1)
 
 
+def completed_task_key(task: str) -> str:
+    return normalize_match_text(strip_task_metadata(task))
+
+
+def completed_checklist_items_on_day(text: str, day: dt.date) -> list[str]:
+    items: list[str] = []
+    for line in text.splitlines():
+        if "- [x]" not in line.lower():
+            continue
+        completed_match = re.search(r"\|\s*完成:\s*(\d{4}-\d{2}-\d{2})\b", line)
+        if not completed_match or completed_match.group(1) != day.isoformat():
+            continue
+        task = strip_task_metadata(line)
+        if task:
+            items.append(task)
+    return items
+
+
+def habit_completed_items_on_day(root: Path, day: dt.date) -> list[str]:
+    items: list[str] = []
+    text = read(root / "state" / "habits.md")
+    for match, title, name in habit_blocks(text):
+        if day not in completion_dates(match.group(2)):
+            continue
+        items.append(name or title)
+    return items
+
+
+def unique_completed_tasks(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for item in items:
+        key = completed_task_key(item)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        unique.append(item)
+    return unique
+
+
+def completed_tasks_on_day(root: Path, day: dt.date) -> list[str]:
+    items: list[str] = []
+    items.extend(habit_completed_items_on_day(root, day))
+    items.extend(completed_checklist_items_on_day(read(schedule_path(root)), day))
+    items.extend(completed_checklist_items_on_day(read(today_path(root)), day))
+    for project_path in sorted((root / "projects").glob("*.md")):
+        items.extend(completed_checklist_items_on_day(read(project_path), day))
+    return unique_completed_tasks(items)
+
+
 def render_daily(root: Path, day: dt.date) -> str:
     yesterday_path = root / "dailies" / f"{(day - dt.timedelta(days=1)).isoformat()}.md"
     yesterday = read(yesterday_path)
-    done = checklist_items(yesterday, checked=True) or ["还没有记录已完成事项。"]
+    done = completed_tasks_on_day(root, day - dt.timedelta(days=1)) or ["还没有记录已完成事项。"]
     yesterday_undone = normalize_task_list(checklist_items(yesterday, checked=False))
     today_open_tasks = normalize_task_list(checklist_items(read(today_path(root)), checked=False))
     undone = yesterday_undone or today_open_tasks or ["没有需要结转的未完成事项。"]
