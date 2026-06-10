@@ -694,7 +694,7 @@ def add_today_task(root: Path, task: str, date: dt.date) -> None:
     if not daily.exists():
         daily.write_text(render_daily(root, date), encoding="utf-8")
     append_under_heading(daily, "今日新增任务", f"- [ ] {task}")
-    append_under_heading(daily, "今日任务清单", f"- [ ] {task}")
+    append_under_subheading(daily, "今日任务", f"- [ ] {task}")
 
 
 def add_project_task(root: Path, task: str, date: dt.date) -> None:
@@ -1027,6 +1027,22 @@ def append_under_heading(path: Path, heading: str, line: str) -> None:
         append(path, f"\n## {heading}\n\n{line}")
         return
     section = match.group(2).rstrip()
+    if section.strip() in {"- 暂无。", "- 暂无任务。", "- 暂无其他任务。"}:
+        section = ""
+    replacement = match.group(1) + section + ("\n" if section else "") + line + "\n\n"
+    path.write_text(text[:match.start()] + replacement + text[match.end():], encoding="utf-8")
+
+
+def append_under_subheading(path: Path, subheading: str, line: str) -> None:
+    text = read(path)
+    pattern = re.compile(rf"(^### {re.escape(subheading)}\n)(.*?)(?=^### |^## |\Z)", re.M | re.S)
+    match = pattern.search(text)
+    if not match:
+        append(path, f"\n### {subheading}\n\n{line}")
+        return
+    section = match.group(2).rstrip()
+    if section.strip() in {"- 暂无。", "- 暂无任务。", "- 暂无今日任务。", "- 暂无其他任务。"}:
+        section = ""
     replacement = match.group(1) + section + ("\n" if section else "") + line + "\n\n"
     path.write_text(text[:match.start()] + replacement + text[match.end():], encoding="utf-8")
 
@@ -1218,9 +1234,9 @@ def render_daily(root: Path, day: dt.date) -> str:
 
 {as_habit_checklist(habits) or "- 暂无自动加入日报的 Habit。"}
 
-### 其他任务
+### 今日任务
 
-{as_checklist(today_tasks) or "- 暂无其他任务。"}
+{as_checklist(today_tasks) or "- 暂无今日任务。"}
 
 ## 今日新增任务
 
@@ -1319,7 +1335,7 @@ def render_daily_suggestions(
     if near_tasks:
         suggestions.append(f"近期优先推进“{short_task(near_tasks[0])}”，先产出一个可验收的小结果，再处理低优先级事项。")
     if today_tasks:
-        suggestions.append(f"今日其他任务从“{short_task(today_tasks[0])}”开始，建议先用 25 到 45 分钟完成第一步，避免只停留在待办列表里。")
+        suggestions.append(f"今日任务从“{short_task(today_tasks[0])}”开始，建议先用 25 到 45 分钟完成第一步，避免只停留在待办列表里。")
     if open_habits:
         suggestions.append(f"Habit 还有 {len(open_habits)} 项未完成，建议把“{short_task(open_habits[0])}”安排到固定时段，完成后及时标记，保证连续记录不断。")
     if active_waiting:
