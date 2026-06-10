@@ -1178,24 +1178,50 @@ def completed_tasks_on_day(root: Path, day: dt.date) -> list[str]:
     return unique_completed_tasks(items)
 
 
+def task_checklist_items_for_day(text: str, day: dt.date) -> list[tuple[str, bool]]:
+    items: list[tuple[str, bool]] = []
+    seen: set[str] = set()
+    day_markers = [
+        f"日期: {day.isoformat()}",
+        f"添加: {day.isoformat()}",
+        f"结转到: {day.isoformat()}",
+    ]
+    for line in text.splitlines():
+        match = re.match(r"^\s*-\s+\[([ xX])\]\s+(.*)$", line)
+        if not match:
+            continue
+        if not any(marker in line for marker in day_markers):
+            continue
+        task = strip_task_metadata(match.group(2))
+        if not task or task.startswith("没有需要结转"):
+            continue
+        key = normalize_match_text(task)
+        if key in seen:
+            continue
+        seen.add(key)
+        items.append((task, match.group(1).lower() == "x"))
+    return items
+
+
 def render_daily(root: Path, day: dt.date) -> str:
     yesterday_path = root / "dailies" / f"{(day - dt.timedelta(days=1)).isoformat()}.md"
     yesterday = read(yesterday_path)
     done = completed_tasks_on_day(root, day - dt.timedelta(days=1)) or ["还没有记录已完成事项。"]
     yesterday_undone = normalize_task_list(checklist_items(yesterday, checked=False))
-    today_open_tasks = normalize_task_list(checklist_items(read(today_path(root)), checked=False))
+    today_task_items = task_checklist_items_for_day(read(today_path(root)), day)
+    today_open_tasks = [task for task, completed in today_task_items if not completed]
     undone = yesterday_undone or today_open_tasks or ["没有需要结转的未完成事项。"]
     waiting = checklist_items(read(root / "state" / "waiting.md"), checked=False) or bullet_lines(read(root / "state" / "waiting.md")) or ["当前没有等待中事项。"]
     blocked = checklist_items(read(root / "state" / "blocked.md"), checked=False) or bullet_lines(read(root / "state" / "blocked.md")) or ["当前没有阻塞项。"]
     projects = project_summaries(root)
     automations = checklist_items(iter_automation_text(root), checked=False)
     habits = habit_items(root, day)
-    today_tasks = normalize_task_list([*yesterday_undone, *today_open_tasks])
+    today_tasks = today_task_items
     near_tasks = near_term_tasks(root, day)
     new_tasks = tasks_added_on(root, day)
     suggestions = render_daily_suggestions(
         near_tasks=near_tasks,
-        today_tasks=today_tasks,
+        today_tasks=today_open_tasks,
         waiting=waiting,
         blocked=blocked,
         projects=projects,
@@ -1236,11 +1262,11 @@ def render_daily(root: Path, day: dt.date) -> str:
 
 ### 今日任务
 
-{as_checklist(today_tasks) or "- 暂无今日任务。"}
+{as_task_checklist(today_tasks) or "- 暂无今日任务。"}
 
 ## 今日新增任务
 
-{as_checklist(new_tasks) or "- 暂无。"}
+{as_task_checklist(new_tasks) or "- 暂无。"}
 
 ## 今日建议
 
@@ -1269,19 +1295,20 @@ def normalize_task_list(items: list[str]) -> list[str]:
     return normalized
 
 
-def tasks_added_on(root: Path, day: dt.date) -> list[str]:
-    tasks: list[str] = []
+def tasks_added_on(root: Path, day: dt.date) -> list[tuple[str, bool]]:
+    tasks: list[tuple[str, bool]] = []
     seen: set[str] = set()
     marker = f"添加: {day.isoformat()}"
     for line in read(today_path(root)).splitlines():
-        if not re.match(r"^\s*-\s+\[ \]\s+", line) or marker not in line:
+        match = re.match(r"^\s*-\s+\[([ xX])\]\s+(.*)$", line)
+        if not match or marker not in line:
             continue
-        task = strip_task_metadata(line)
+        task = strip_task_metadata(match.group(2))
         key = normalize_match_text(task)
         if key in seen:
             continue
         seen.add(key)
-        tasks.append(task)
+        tasks.append((task, match.group(1).lower() == "x"))
     return tasks
 
 
@@ -1371,6 +1398,10 @@ def as_bullets(items: list[str]) -> str:
 
 def as_checklist(items: list[str]) -> str:
     return "\n".join(f"- [ ] {item}" for item in items)
+
+
+def as_task_checklist(items: list[tuple[str, bool]]) -> str:
+    return "\n".join(f"- [{'x' if completed else ' '}] {name}" for name, completed in items)
 
 
 def as_habit_checklist(items: list[tuple[str, bool]]) -> str:
