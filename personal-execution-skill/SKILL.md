@@ -43,6 +43,7 @@ python3 <skill_dir>/scripts/personal_os.py bootstrap <target_repo>
 python3 <skill_dir>/scripts/personal_os.py set-repo <target_repo>
 python3 <skill_dir>/scripts/personal_os.py daily --date YYYY-MM-DD
 python3 <skill_dir>/scripts/personal_os.py add-task "task text" --type today
+python3 <skill_dir>/scripts/personal_os.py add-task "task text" --type today --started
 python3 <skill_dir>/scripts/personal_os.py add-task "project text" --type project
 python3 <skill_dir>/scripts/personal_os.py add-task "task text" --type habit
 python3 <skill_dir>/scripts/personal_os.py complete-task "task text，收获为xxx" --date YYYY-MM-DD
@@ -51,14 +52,18 @@ python3 <skill_dir>/scripts/personal_os.py remove-task "task text" --date YYYY-M
 python3 <skill_dir>/scripts/personal_os.py remove-task "task text" --date YYYY-MM-DD --confirm 1
 python3 <skill_dir>/scripts/personal_os.py update-project "project name" "当前进度50%，目前已完成xxx，收获为xxx" --date YYYY-MM-DD
 python3 <skill_dir>/scripts/personal_os.py plan-project "project name" --date YYYY-MM-DD
+python3 <skill_dir>/scripts/personal_os.py plan-project "project name" --date YYYY-MM-DD --started
 python3 <skill_dir>/scripts/personal_os.py plan-project "project name" --date YYYY-MM-DD --confirm
 python3 <skill_dir>/scripts/personal_os.py weekly-review --week-start YYYY-MM-DD
 python3 <skill_dir>/scripts/personal_os.py project-review
+python3 <skill_dir>/scripts/personal_os.py backfill-started
 ```
 
 Bootstrap records the user's PersonalOS repository path in the skill config at `<skill_dir>/state/config.json`. After bootstrap, later commands may omit `<target_repo>` and will use the recorded default repository. If the user has multiple PersonalOS repositories, pass the repository path explicitly.
 
 For all core operations, especially `daily`, run the bundled script instead of manually drafting Markdown. Manual generation may invent generic productivity advice or time blocks that are not present in the user's PersonalOS data.
+
+默认新增任务都是“未启动”。只有用户明确说“添加并启动”或等价意思时，才在脚本命令里加 `--started`。未启动任务没有截止日期，只有优先级；日报的执行清单与近期任务不应包含未启动任务，而应在“推荐任务”模块中展示。
 
 Read `references/workflows.md` before manually editing repository content or when a user asks for nuanced classification. Read `references/schema.md` when creating or repairing files.
 

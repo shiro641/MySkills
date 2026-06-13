@@ -33,9 +33,10 @@ class RemoveCandidate:
 @dataclass(frozen=True)
 class ProjectPlanItem:
     title: str
-    due_date: dt.date
+    priority: int
     action: str
     acceptance: str
+    due_date: Optional[dt.date] = None
 
 DIRS = [
     "dailies",
@@ -221,6 +222,9 @@ def habit_items(root: Path, day: dt.date) -> list[tuple[str, bool]]:
     for match in re.finditer(r"^##\s+(.+?)\n(.*?)(?=^##\s+|\Z)", text, re.M | re.S):
         title = match.group(1).strip()
         body = match.group(2)
+        started_match = re.search(r"^-\s*启动:\s*(.+?)\s*$", body, re.M)
+        if started_match and not is_started_value(started_match.group(1)):
+            continue
         auto_match = re.search(r"^-\s*自动加入日报:\s*(.+?)\s*$", body, re.M)
         if not auto_match:
             continue
@@ -257,6 +261,16 @@ def habit_blocks(text: str) -> list[tuple[re.Match[str], str, str]]:
     return blocks
 
 
+def habit_started(body: str) -> bool:
+    match = re.search(r"^-\s*启动:\s*(.+?)\s*$", body, re.M)
+    return is_started_value(match.group(1)) if match else True
+
+
+def habit_priority(body: str, name: str) -> int:
+    match = re.search(r"^-\s*优先级:\s*(.+?)\s*$", body, re.M)
+    return parse_priority_value(match.group(1)) if match else infer_priority(name, "habit")
+
+
 def matches_task_name(candidate: str, task: str) -> bool:
     left = normalize_match_text(candidate)
     right = normalize_match_text(task)
@@ -265,6 +279,9 @@ def matches_task_name(candidate: str, task: str) -> bool:
 
 def normalize_match_text(value: str) -> str:
     value = re.sub(r"\|.*$", "", value)
+    value = value.replace("<https://", "https://").replace(">", "")
+    value = value.replace("阅读文章：", "读文章：")
+    value = value.replace("阅读 OpenAI 两篇文章", "读文章：https://openai.com/index/harness-engineering/、https://openai.com/index/building-self-improving-tax-agents-with-codex/")
     value = re.sub(r"\s+", " ", value.strip().lower())
     return value
 
@@ -274,6 +291,131 @@ def strip_task_metadata(value: str) -> str:
     value = re.sub(r"^\s*-\s+\[[ xX]\]\s+", "", value).strip()
     value = re.sub(r"^\s*-\s+", "", value).strip()
     return value
+
+
+def canonicalize_task_text(task: str) -> str:
+    task = task.strip()
+    task = re.sub(r"`([^`]+)`", r"\1", task)
+    task = task.replace("阅读文章：", "读文章：")
+    task = re.sub(r"阅读\s*sse\+agent\s*代码", "阅读sse+agent代码", task, flags=re.I)
+    task = re.sub(r"探索\s*description\s*怎么写，怎么优化\s*skill\.md", "探索 description 怎么写，怎么优化 skill.md", task, flags=re.I)
+    task = re.sub(r"^阅读 OpenAI 两篇文章$", "读文章：https://openai.com/index/harness-engineering/、https://openai.com/index/building-self-improving-tax-agents-with-codex/", task)
+    task = re.sub(r"\s+", " ", task).strip()
+    return task
+
+
+def rewrite_task_text_in_line(line: str) -> str:
+    checklist_match = re.match(r"^(\s*-\s+\[[ xX]\]\s+)(.*?)(\s*(?:\|.*)?)$", line)
+    if checklist_match:
+        task = canonicalize_task_text(checklist_match.group(2))
+        tail = checklist_match.group(3) or ""
+        return checklist_match.group(1) + task + tail
+    bullet_match = re.match(r"^(\s*-\s+)(.*?)(\s*(?:\|.*)?)$", line)
+    if bullet_match:
+        task = canonicalize_task_text(bullet_match.group(2))
+        tail = bullet_match.group(3) or ""
+        return bullet_match.group(1) + task + tail
+    return line
+
+
+def expand_combined_article_line(line: str) -> list[str]:
+    pair = "https://openai.com/index/harness-engineering/、https://openai.com/index/building-self-improving-tax-agents-with-codex/"
+    if pair not in line:
+        return [line]
+    checklist_match = re.match(r"^(\s*-\s+\[[ xX]\]\s+)(.*?)(\s*(?:\|.*)?)$", line)
+    bullet_match = re.match(r"^(\s*-\s+)(.*?)(\s*(?:\|.*)?)$", line)
+    match = checklist_match or bullet_match
+    if not match:
+        return [line]
+    prefix, task, tail = match.group(1), match.group(2), match.group(3) or ""
+    if "读文章：" not in task:
+        return [line]
+    return [
+        f"{prefix}读文章：https://openai.com/index/harness-engineering/{tail}",
+        f"{prefix}读文章：https://openai.com/index/building-self-improving-tax-agents-with-codex/{tail}",
+    ]
+
+
+def metadata_value(text: str, label: str) -> str:
+    match = re.search(rf"(?:^|\|)\s*{re.escape(label)}:\s*([^|]+)", text)
+    return match.group(1).strip() if match else ""
+
+
+def parse_priority_value(value: str) -> Optional[int]:
+    if not value:
+        return None
+    match = re.search(r"(\d+)", value)
+    return int(match.group(1)) if match else None
+
+
+def line_priority(line: str) -> Optional[int]:
+    return parse_priority_value(metadata_value(line, "优先级"))
+
+
+def is_started_value(value: str) -> bool:
+    normalized = value.strip().lower()
+    if not normalized:
+        return True
+    return normalized not in {"未启动", "false", "no", "0", "not started", "pending"}
+
+
+def line_started(line: str) -> bool:
+    value = metadata_value(line, "启动")
+    return is_started_value(value) if value else True
+
+
+def set_pipe_field(line: str, label: str, value: str) -> str:
+    pattern = re.compile(rf"(\|\s*{re.escape(label)}:\s*)([^|]*)")
+    if pattern.search(line):
+        line = pattern.sub(lambda match: match.group(1) + value, line, count=1)
+    else:
+        line = line.rstrip() + f" | {label}: {value}"
+    return normalize_metadata_spacing(line)
+
+
+def infer_priority(task: str, kind: str = "task") -> int:
+    score = 1
+    compact = strip_task_metadata(task)
+    length = len(compact)
+    if length > 18:
+        score += 1
+    if length > 36:
+        score += 1
+    if re.search(r"[；;，,、]|以及|并且|同时|整理|梳理|调研|方案|系统|完整|总结|复盘|搭建|优化", compact):
+        score += 1
+    if re.search(r"高优先级|收尾|确认|明确|检查|补齐|记录|更新", compact):
+        score -= 1
+    if kind == "habit":
+        score = max(score, 1)
+    return max(1, min(score, 4))
+
+
+def checklist_task_lines(text: str, checked: Optional[bool] = None, started: Optional[bool] = None) -> list[str]:
+    items: list[str] = []
+    for line in text.splitlines():
+        match = re.match(r"^\s*-\s+\[([ xX])\]\s+(.*)$", line)
+        if not match:
+            continue
+        is_checked = match.group(1).lower() == "x"
+        if checked is not None and checked != is_checked:
+            continue
+        if started is not None and line_started(line) != started:
+            continue
+        items.append(match.group(2).strip())
+    return items
+
+
+def plain_task_lines(text: str, started: Optional[bool] = None) -> list[str]:
+    items: list[str] = []
+    for line in text.splitlines():
+        if re.match(r"^\s*-\s+\[[ xX]\]\s+", line):
+            continue
+        if not re.match(r"^\s*-\s+", line):
+            continue
+        if started is not None and line_started(line) != started:
+            continue
+        items.append(re.sub(r"^\s*-\s+", "", line).strip())
+    return items
 
 
 def extract_learning(text: str, explicit_learning: Optional[str] = None) -> str:
@@ -339,9 +481,24 @@ def append_unique_line(path: Path, line: str) -> None:
     append(path, line)
 
 
-def schedule_entry(task: str, due_date: dt.date, suffix: str = "") -> str:
-    extra = suffix if not suffix or suffix.startswith(" | ") else f" | {suffix}"
-    return f"- {task} | 状态: open | 截止: {due_date.isoformat()} | 完成: {extra}"
+def schedule_entry(
+    task: str,
+    due_date: Optional[dt.date] = None,
+    suffix: str = "",
+    *,
+    started: bool,
+    priority: Optional[int] = None,
+) -> str:
+    parts = [f"- {task}", "状态: open" if started else "状态: pending", f"启动: {'已启动' if started else '未启动'}"]
+    if started and due_date:
+        parts.append(f"截止: {due_date.isoformat()}")
+    if not started:
+        parts.append(f"优先级: {priority or infer_priority(task)}")
+    parts.append("完成:")
+    if suffix:
+        extra = suffix[3:] if suffix.startswith(" | ") else suffix
+        parts.extend(part.strip() for part in extra.split("|") if part.strip())
+    return " | ".join(parts)
 
 
 def ensure_daily(root: Path, day: dt.date) -> Path:
@@ -664,45 +821,73 @@ def add_task(args: argparse.Namespace) -> None:
     root, task = task_args(args)
     date = parse_date(args.date)
     task_type = classify_task(task, args.type)
+    started = bool(getattr(args, "started", False))
+    priority = infer_priority(task, task_type)
     if task_type == "today":
-        add_today_task(root, task, date)
+        add_today_task(root, task, date, started=started, priority=priority)
     elif task_type == "project":
-        add_project_task(root, task, date)
-        print_project_plan(task, build_project_plan(task, date, None))
+        add_project_task(root, task, date, started=started, priority=priority)
+        print_project_plan(task, build_project_plan(task, date, None, started=started))
         print("\n项目子任务清单尚未写入。确认无误后运行:")
-        print(f"python3 {Path(__file__).resolve()} plan-project {quote_arg(task)} --date {date.isoformat()} --confirm")
+        command = f"python3 {Path(__file__).resolve()} plan-project {quote_arg(task)} --date {date.isoformat()} --confirm"
+        if started:
+            command += " --started"
+        print(command)
     elif task_type == "scheduled":
-        append(schedule_path(root), schedule_entry(task, date))
+        due_date = date if started else None
+        append(schedule_path(root), schedule_entry(task, due_date, started=started, priority=priority))
     elif task_type == "automation":
-        add_automation_candidate(root, task, date)
+        add_automation_candidate(root, task, date, started=started, priority=priority)
     elif task_type == "waiting":
-        append(root / "state" / "waiting.md", f"- [ ] {task} | 开始: {date.isoformat()}")
+        line = f"- [ ] {task} | 开始: {date.isoformat()} | 启动: {'已启动' if started else '未启动'}"
+        if not started:
+            line = set_pipe_field(line, "优先级", str(priority))
+        append(root / "state" / "waiting.md", normalize_metadata_spacing(line))
     elif task_type == "blocked":
-        append(root / "state" / "blocked.md", f"- [ ] {task} | 开始: {date.isoformat()}")
+        line = f"- [ ] {task} | 开始: {date.isoformat()} | 启动: {'已启动' if started else '未启动'}"
+        if not started:
+            line = set_pipe_field(line, "优先级", str(priority))
+        append(root / "state" / "blocked.md", normalize_metadata_spacing(line))
     elif task_type == "archive":
         append(archive_path(root), f"- {date.isoformat()} {task}")
     elif task_type == "habit":
-        append(root / "state" / "habits.md", "\n" + render_template("habit.md", habit_name=task))
+        append(
+            root / "state" / "habits.md",
+            "\n" + render_template(
+                "habit.md",
+                habit_name=task,
+            ).replace("- 启动: 未启动", f"- 启动: {'已启动' if started else '未启动'}").replace("- 优先级: 1", f"- 优先级: {priority}"),
+        )
         refresh_habit_stats(root)
     print(f"已添加任务，类型为 {task_type}: {task}")
     print_diff(root)
 
 
-def add_today_task(root: Path, task: str, date: dt.date) -> None:
-    append(today_path(root), f"- [ ] {task} | 添加: {date.isoformat()}")
+def add_today_task(root: Path, task: str, date: dt.date, *, started: bool, priority: int) -> None:
+    line = f"- [ ] {task} | 添加: {date.isoformat()} | 启动: {'已启动' if started else '未启动'}"
+    if not started:
+        line = set_pipe_field(line, "优先级", str(priority))
+    append(today_path(root), normalize_metadata_spacing(line))
     daily = root / "dailies" / f"{date.isoformat()}.md"
     if not daily.exists():
         daily.write_text(render_daily(root, date), encoding="utf-8")
-    append_under_heading(daily, "今日新增任务", f"- [ ] {task}")
-    append_under_subheading(daily, "今日任务", f"- [ ] {task}")
+    if started:
+        append_under_heading(daily, "今日新增任务", f"- [ ] {task}")
+        append_under_heading(daily, "今日任务清单", f"- [ ] {task}")
 
 
-def add_project_task(root: Path, task: str, date: dt.date) -> None:
+def add_project_task(root: Path, task: str, date: dt.date, *, started: bool, priority: int) -> None:
     title = task.split(":", 1)[-1].strip() if ":" in task else task.strip()
     path = root / "projects" / f"{slugify(title)}.md"
     if not path.exists():
         path.write_text(render_template("project.md", project_name=title, date=date.isoformat()), encoding="utf-8")
-    append_under_heading(path, "下一步行动", f"- [ ] {task}")
+    replace_field(path, "启动状态", "已启动" if started else "未启动")
+    replace_field(path, "优先级", str(priority))
+    line = f"- [ ] {task} | 启动: {'已启动' if started else '未启动'}"
+    if not started:
+        line = set_pipe_field(line, "优先级", str(priority))
+    append_under_heading(path, "下一步行动", normalize_metadata_spacing(line))
+    sync_project_started_state(root, path, started)
     replace_field(path, "最后更新", date.isoformat())
 
 
@@ -724,6 +909,38 @@ def ensure_project(root: Path, project: str, date: dt.date) -> Path:
     if not path.exists():
         path.write_text(render_template("project.md", project_name=project.strip(), date=date.isoformat()), encoding="utf-8")
     return path
+
+
+def sync_project_started_state(root: Path, path: Path, started: bool) -> None:
+    text = read(path)
+    lines: list[str] = []
+    subtask_priority = 1
+    for line in text.splitlines():
+        if re.match(r"^\s*-\s+\[[ xX]\]\s+", line):
+            line = set_pipe_field(line, "启动", "已启动" if started else "未启动")
+            if started:
+                line = re.sub(r"\s*\|\s*优先级:\s*[^|]+", "", line)
+            else:
+                line = re.sub(r"\s*\|\s*截止:\s*[^|]+", "", line)
+                if "子任务:" in line:
+                    line = set_pipe_field(line, "优先级", str(subtask_priority))
+                    subtask_priority += 1
+                elif "优先级:" not in line:
+                    line = set_pipe_field(line, "优先级", "1")
+            line = normalize_metadata_spacing(line)
+        lines.append(line)
+    path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    if not started:
+        remove_project_schedule_entries(root, project_title(path))
+
+
+def remove_project_schedule_entries(root: Path, project: str) -> None:
+    schedule_file = schedule_path(root)
+    text = read(schedule_file)
+    if not text:
+        return
+    kept = [line for line in text.splitlines() if project_ref_from_line(line) != project]
+    schedule_file.write_text("\n".join(kept).rstrip() + "\n", encoding="utf-8")
 
 
 def update_project(args: argparse.Namespace) -> None:
@@ -757,53 +974,66 @@ def plan_project(args: argparse.Namespace) -> None:
     root = resolve_repo(args.repo)
     start = parse_date(args.date)
     project = args.project.strip()
-    items = build_project_plan(project, start, args.deadline)
+    started = bool(getattr(args, "started", False))
+    items = build_project_plan(project, start, args.deadline, started=started)
     print_project_plan(project, items)
     if not args.confirm:
         print("\n尚未写入 PersonalOS。确认无误后运行:")
-        print(
+        command = (
             f"python3 {Path(__file__).resolve()} plan-project {quote_arg(project)} "
             f"--date {start.isoformat()} --confirm"
         )
+        if started:
+            command += " --started"
+        print(command)
         return
     path = ensure_project(root, project, start)
     ensure_project_plan_section(path)
-    remove_section_placeholders(path, "子任务清单")
+    reset_section(path, "子任务清单")
     for index, item in enumerate(items, start=1):
         task_id = f"{slugify(project)}-{index}"
-        checklist = (
-            f"- [ ] {item.title} | 状态: open | 截止: {item.due_date.isoformat()} | "
-            f"完成:  | 验收: {item.acceptance} | 子任务: {task_id}"
-        )
+        checklist = f"- [ ] {item.title} | 状态: open | 启动: {'已启动' if started else '未启动'}"
+        if started and item.due_date:
+            checklist += f" | 截止: {item.due_date.isoformat()}"
+        if not started:
+            checklist += f" | 优先级: {item.priority}"
+        checklist += f" | 完成:  | 验收: {item.acceptance} | 子任务: {task_id}"
         append_under_heading(path, "子任务清单", checklist)
-        schedule_line = (
-            f"- {item.title} | 状态: open | 截止: {item.due_date.isoformat()} | "
-            f"完成:  | 项目: {project_title(path)} | 子任务: {task_id}"
-        )
-        append_unique_line(schedule_path(root), schedule_line)
+        if started:
+            schedule_line = schedule_entry(
+                item.title,
+                item.due_date,
+                f" | 项目: {project_title(path)} | 子任务: {task_id}",
+                started=True,
+            )
+            append_unique_line(schedule_path(root), schedule_line)
+    replace_field(path, "启动状态", "已启动" if started else "未启动")
+    replace_field(path, "优先级", str(items[0].priority if items else 1))
+    sync_project_started_state(root, path, started)
     replace_field(path, "最后更新", start.isoformat())
     seed_next_actions_from_plan(path, items)
     seed_milestones_from_plan(path, items)
-    print(f"已写入项目拆分并同步到 state/schedule.md: {path}")
+    target = "并同步到 state/schedule.md" if started else "，当前仅写入优先级，未分配截止日期"
+    print(f"已写入项目拆分{target}: {path}")
     print_diff(root)
 
 
-def build_project_plan(project: str, start: dt.date, deadline: Optional[str]) -> list[ProjectPlanItem]:
+def build_project_plan(project: str, start: dt.date, deadline: Optional[str], *, started: bool) -> list[ProjectPlanItem]:
     end = parse_date(deadline) if deadline else start + dt.timedelta(days=28)
     if end <= start:
         end = start + dt.timedelta(days=28)
-    return build_actionable_project_plan(project, start, end)
+    return build_actionable_project_plan(project, start, end, started=started)
 
 
-def build_actionable_project_plan(project: str, start: dt.date, end: dt.date) -> list[ProjectPlanItem]:
+def build_actionable_project_plan(project: str, start: dt.date, end: dt.date, *, started: bool) -> list[ProjectPlanItem]:
     lowered = project.lower()
     if any(keyword in project for keyword in ["阅读", "源码", "代码"]) or any(
         keyword in lowered for keyword in ["code", "cli", "sdk", "repo"]
     ):
-        return build_code_reading_plan(project, start, end)
+        return build_code_reading_plan(project, start, end, started=started)
     if any(keyword in project for keyword in ["vpn", "代理"]) or "proxy" in lowered:
-        return build_vpn_plan(project, start, end)
-    return build_generic_actionable_plan(project, start, end)
+        return build_vpn_plan(project, start, end, started=started)
+    return build_generic_actionable_plan(project, start, end, started=started)
 
 
 def distribute_due_dates(start: dt.date, end: dt.date, steps: int, minimum_days: int = 1) -> list[dt.date]:
@@ -820,8 +1050,8 @@ def distribute_due_dates(start: dt.date, end: dt.date, steps: int, minimum_days:
     return due_dates
 
 
-def build_code_reading_plan(project: str, start: dt.date, end: dt.date) -> list[ProjectPlanItem]:
-    due_dates = distribute_due_dates(start, end, 6)
+def build_code_reading_plan(project: str, start: dt.date, end: dt.date, *, started: bool) -> list[ProjectPlanItem]:
+    due_dates = distribute_due_dates(start, end, 6) if started else [None] * 6
     definitions = [
         (
             f"{project} - 明确阅读目标与范围",
@@ -855,13 +1085,13 @@ def build_code_reading_plan(project: str, start: dt.date, end: dt.date) -> list[
         ),
     ]
     return [
-        ProjectPlanItem(title, due_dates[index], action, acceptance)
+        ProjectPlanItem(title=title, priority=index + 1, due_date=due_dates[index], action=action, acceptance=acceptance)
         for index, (title, action, acceptance) in enumerate(definitions)
     ]
 
 
-def build_vpn_plan(project: str, start: dt.date, end: dt.date) -> list[ProjectPlanItem]:
-    due_dates = distribute_due_dates(start, end, 7)
+def build_vpn_plan(project: str, start: dt.date, end: dt.date, *, started: bool) -> list[ProjectPlanItem]:
+    due_dates = distribute_due_dates(start, end, 7) if started else [None] * 7
     definitions = [
         (
             f"{project} - 明确目标、设备和约束",
@@ -900,13 +1130,13 @@ def build_vpn_plan(project: str, start: dt.date, end: dt.date) -> list[ProjectPl
         ),
     ]
     return [
-        ProjectPlanItem(title, due_dates[index], action, acceptance)
+        ProjectPlanItem(title=title, priority=index + 1, due_date=due_dates[index], action=action, acceptance=acceptance)
         for index, (title, action, acceptance) in enumerate(definitions)
     ]
 
 
-def build_generic_actionable_plan(project: str, start: dt.date, end: dt.date) -> list[ProjectPlanItem]:
-    due_dates = distribute_due_dates(start, end, 5)
+def build_generic_actionable_plan(project: str, start: dt.date, end: dt.date, *, started: bool) -> list[ProjectPlanItem]:
+    due_dates = distribute_due_dates(start, end, 5) if started else [None] * 5
     definitions = [
         (
             f"{project} - 明确目标与完成标准",
@@ -935,7 +1165,7 @@ def build_generic_actionable_plan(project: str, start: dt.date, end: dt.date) ->
         ),
     ]
     return [
-        ProjectPlanItem(title, due_dates[index], action, acceptance)
+        ProjectPlanItem(title=title, priority=index + 1, due_date=due_dates[index], action=action, acceptance=acceptance)
         for index, (title, action, acceptance) in enumerate(definitions)
     ]
 
@@ -944,7 +1174,10 @@ def print_project_plan(project: str, items: list[ProjectPlanItem]) -> None:
     print(f"# 项目拆分草案: {project}")
     for index, item in enumerate(items, start=1):
         print(f"{index}. {item.title}")
-        print(f"   - 截止时间: {item.due_date.isoformat()}")
+        if item.due_date:
+            print(f"   - 截止时间: {item.due_date.isoformat()}")
+        else:
+            print(f"   - 优先级: {item.priority}")
         print(f"   - 动作: {item.action}")
         print(f"   - 验收标准: {item.acceptance}")
 
@@ -958,7 +1191,13 @@ def seed_next_actions_from_plan(path: Path, items: list[ProjectPlanItem]) -> Non
     body = match.group(2)
     if "定义下一个具体行动" not in body:
         return
-    next_actions = "\n".join(f"- [ ] {item.title}" for item in items[:3]) + "\n\n"
+    next_actions = "\n".join(
+        normalize_metadata_spacing(
+            f"- [ ] {item.title} | 启动: {'已启动' if item.due_date else '未启动'}"
+            + (f" | 截止: {item.due_date.isoformat()}" if item.due_date else f" | 优先级: {item.priority}")
+        )
+        for item in items[:3]
+    ) + "\n\n"
     path.write_text(text[:match.start()] + match.group(1) + next_actions + text[match.end():], encoding="utf-8")
 
 
@@ -972,7 +1211,12 @@ def seed_milestones_from_plan(path: Path, items: list[ProjectPlanItem]) -> None:
     if body not in {"- 暂无。", "- 暂无", "- 无。", "- 无"}:
         return
     milestone_lines = "\n".join(
-        f"- {item.due_date.isoformat()} 前完成：{strip_task_metadata(item.title)}" for item in items[:3]
+        (
+            f"- {item.due_date.isoformat()} 前完成：{strip_task_metadata(item.title)}"
+            if item.due_date
+            else f"- P{item.priority}：{strip_task_metadata(item.title)}"
+        )
+        for item in items[:3]
     )
     replacement = match.group(1) + milestone_lines + "\n"
     path.write_text(text[:match.start()] + replacement + text[match.end():], encoding="utf-8")
@@ -988,6 +1232,17 @@ def ensure_project_plan_section(path: Path) -> None:
     else:
         text = text.rstrip() + "\n\n## 子任务清单\n"
     path.write_text(text.rstrip() + "\n", encoding="utf-8")
+
+
+def reset_section(path: Path, heading: str) -> None:
+    text = read(path)
+    pattern = re.compile(rf"(^## {re.escape(heading)}\n)(.*?)(?=^## |\Z)", re.M | re.S)
+    match = pattern.search(text)
+    if not match:
+        append(path, f"\n## {heading}\n")
+        return
+    replacement = match.group(1) + "\n"
+    path.write_text(text[:match.start()] + replacement + text[match.end():], encoding="utf-8")
 
 
 def remove_section_placeholders(path: Path, heading: str) -> None:
@@ -1006,15 +1261,17 @@ def remove_section_placeholders(path: Path, heading: str) -> None:
     path.write_text(text[:match.start()] + replacement + text[match.end():], encoding="utf-8")
 
 
-def add_automation_candidate(root: Path, task: str, date: dt.date) -> None:
+def add_automation_candidate(root: Path, task: str, date: dt.date, *, started: bool, priority: int) -> None:
     title = task[:60].strip()
     content = render_template(
         "automation-candidate.md",
         date=date.isoformat(),
         title=title,
         source_task=task,
+        priority=str(priority),
         codex_prompt=f"端到端完成这个任务：{task}。检查相关文件，做必要修改，验证结果，并总结产出。",
     )
+    content = content.replace("未启动", "已启动", 1) if started else content
     append(automation_path(root), "\n" + content)
     increment_stat(root / "state" / "stats.md", "已创建自动化候选数")
 
@@ -1027,22 +1284,6 @@ def append_under_heading(path: Path, heading: str, line: str) -> None:
         append(path, f"\n## {heading}\n\n{line}")
         return
     section = match.group(2).rstrip()
-    if section.strip() in {"- 暂无。", "- 暂无任务。", "- 暂无其他任务。"}:
-        section = ""
-    replacement = match.group(1) + section + ("\n" if section else "") + line + "\n\n"
-    path.write_text(text[:match.start()] + replacement + text[match.end():], encoding="utf-8")
-
-
-def append_under_subheading(path: Path, subheading: str, line: str) -> None:
-    text = read(path)
-    pattern = re.compile(rf"(^### {re.escape(subheading)}\n)(.*?)(?=^### |^## |\Z)", re.M | re.S)
-    match = pattern.search(text)
-    if not match:
-        append(path, f"\n### {subheading}\n\n{line}")
-        return
-    section = match.group(2).rstrip()
-    if section.strip() in {"- 暂无。", "- 暂无任务。", "- 暂无今日任务。", "- 暂无其他任务。"}:
-        section = ""
     replacement = match.group(1) + section + ("\n" if section else "") + line + "\n\n"
     path.write_text(text[:match.start()] + replacement + text[match.end():], encoding="utf-8")
 
@@ -1083,11 +1324,13 @@ def promote_scheduled_for_day(root: Path, day: dt.date) -> None:
     for line in read(schedule_path(root)).splitlines():
         if not is_open_schedule_line(line):
             continue
+        if not line_started(line):
+            continue
         due = task_due_date(line)
         if due != day:
             continue
         task = strip_task_metadata(line)
-        append_unique_line(today_file, f"- [ ] {task} | 来源: scheduled | 日期: {day.isoformat()}")
+        append_unique_line(today_file, f"- [ ] {task} | 来源: scheduled | 日期: {day.isoformat()} | 启动: 已启动")
 
 
 def iter_schedule_lines(root: Path) -> list[str]:
@@ -1102,9 +1345,141 @@ def iter_archive_text(root: Path) -> str:
     return read(archive_path(root))
 
 
+def automation_blocks_with_metadata(text: str) -> list[tuple[str, str, bool, int]]:
+    blocks: list[tuple[str, str, bool, int]] = []
+    for match in re.finditer(r"^##\s+(.+?)\n(.*?)(?=^##\s+|\Z)", text, re.M | re.S):
+        title = match.group(1).strip()
+        body = match.group(2)
+        started = is_started_value(extract_h3_field(body, "启动状态") or "已启动")
+        priority = parse_priority_value(extract_h3_field(body, "优先级")) or infer_priority(title, "automation")
+        blocks.append((title, body, started, priority))
+    return blocks
+
+
+def extract_h3_field(text: str, heading: str) -> str:
+    match = re.search(rf"^###\s+{re.escape(heading)}\s*\n\n(.*?)(?=\n### |\Z)", text, re.M | re.S)
+    return match.group(1).strip() if match else ""
+
+
+def started_automation_titles(root: Path) -> list[str]:
+    titles: list[str] = []
+    for title, body, started, _priority in automation_blocks_with_metadata(iter_automation_text(root)):
+        if not started:
+            continue
+        if checklist_items(body, checked=False):
+            titles.append(title)
+    return titles
+
+
+def all_habit_names(root: Path) -> list[str]:
+    names: list[str] = []
+    for _match, title, name in habit_blocks(read(root / "state" / "habits.md")):
+        names.append(name or title)
+    return names
+
+
+def clean_today_habit_duplicates(root: Path) -> bool:
+    path = today_path(root)
+    text = read(path)
+    if not text:
+        return False
+    habit_keys = {normalize_match_text(name) for name in all_habit_names(root)}
+    if not habit_keys:
+        return False
+    lines = text.splitlines()
+    kept: list[str] = []
+    changed = False
+    for line in lines:
+        if re.match(r"^\s*-\s+\[[ xX]\]\s+", line):
+            task = strip_task_metadata(line)
+            if normalize_match_text(task) in habit_keys:
+                changed = True
+                continue
+        kept.append(line)
+    if changed:
+        path.write_text("\n".join(kept).rstrip() + "\n", encoding="utf-8")
+    return changed
+
+
+def clean_daily_habit_duplicates(root: Path, path: Path) -> bool:
+    text = read(path)
+    if not text:
+        return False
+    habit_keys = {normalize_match_text(name) for name in all_habit_names(root)}
+    if not habit_keys:
+        return False
+    lines = text.splitlines()
+    kept: list[str] = []
+    changed = False
+    for line in lines:
+        if re.match(r"^\s*-\s+\[[ xX]\]\s+", line):
+            task = strip_task_metadata(line)
+            if normalize_match_text(task) in habit_keys:
+                changed = True
+                continue
+        kept.append(line)
+    if changed:
+        path.write_text("\n".join(kept).rstrip() + "\n", encoding="utf-8")
+    return changed
+
+
+def recommended_unstarted_tasks(root: Path) -> tuple[list[str], list[str]]:
+    task_candidates: list[tuple[int, str]] = []
+    habit_candidates: list[tuple[int, str]] = []
+    seen_tasks: set[str] = set()
+    seen_habits: set[str] = set()
+
+    def push_task(task: str, priority: int) -> None:
+        key = normalize_match_text(task)
+        if not key or key in seen_tasks:
+            return
+        seen_tasks.add(key)
+        task_candidates.append((priority, task))
+
+    for raw in read(today_path(root)).splitlines():
+        if "- [ ]" not in raw or line_started(raw):
+            continue
+        push_task(strip_task_metadata(raw), line_priority(raw) or infer_priority(raw))
+    for path in [schedule_path(root), root / "state" / "waiting.md", root / "state" / "blocked.md"]:
+        for raw in read(path).splitlines():
+            if not raw.strip().startswith("- "):
+                continue
+            if line_started(raw):
+                continue
+            push_task(strip_task_metadata(raw), line_priority(raw) or infer_priority(raw))
+    for path in sorted((root / "projects").glob("*.md")):
+        for raw in read(path).splitlines():
+            if "- [ ]" not in raw or line_started(raw):
+                continue
+            push_task(strip_task_metadata(raw), line_priority(raw) or infer_priority(raw, "project"))
+    for title, body, started, priority in automation_blocks_with_metadata(iter_automation_text(root)):
+        if not started:
+            push_task(title, priority)
+    habits_text = read(root / "state" / "habits.md")
+    for _match, title, name in habit_blocks(habits_text):
+        body = _match.group(2)
+        if habit_started(body):
+            continue
+        key = normalize_match_text(name)
+        if key in seen_habits:
+            continue
+        seen_habits.add(key)
+        habit_candidates.append((habit_priority(body, name), name))
+
+    task_candidates.sort(key=lambda item: (item[0], len(item[1]), item[1]))
+    habit_candidates.sort(key=lambda item: (item[0], len(item[1]), item[1]))
+    return (
+        [f"P{priority} {task}" for priority, task in task_candidates[:4]],
+        [f"P{priority} {task}" for priority, task in habit_candidates[:1]],
+    )
+
+
 def daily(args: argparse.Namespace) -> None:
     root = resolve_repo(args.repo)
     day = parse_date(args.date)
+    clean_today_habit_duplicates(root)
+    clean_daily_habit_duplicates(root, root / "dailies" / f"{(day - dt.timedelta(days=1)).isoformat()}.md")
+    clean_daily_habit_duplicates(root, root / "dailies" / f"{day.isoformat()}.md")
     promote_scheduled_for_day(root, day)
     path = root / "dailies" / f"{day.isoformat()}.md"
     if path.exists() and not args.force:
@@ -1128,100 +1503,27 @@ def preserve_daily_review(new_content: str, old_content: str) -> str:
     return pattern.sub(lambda match: match.group(1) + old_review + "\n", new_content, count=1)
 
 
-def completed_task_key(task: str) -> str:
-    return normalize_match_text(strip_task_metadata(task))
-
-
-def completed_checklist_items_on_day(text: str, day: dt.date) -> list[str]:
-    items: list[str] = []
-    for line in text.splitlines():
-        if "- [x]" not in line.lower():
-            continue
-        completed_match = re.search(r"\|\s*完成:\s*(\d{4}-\d{2}-\d{2})\b", line)
-        if not completed_match or completed_match.group(1) != day.isoformat():
-            continue
-        task = strip_task_metadata(line)
-        if task:
-            items.append(task)
-    return items
-
-
-def habit_completed_items_on_day(root: Path, day: dt.date) -> list[str]:
-    items: list[str] = []
-    text = read(root / "state" / "habits.md")
-    for match, title, name in habit_blocks(text):
-        if day not in completion_dates(match.group(2)):
-            continue
-        items.append(name or title)
-    return items
-
-
-def unique_completed_tasks(items: list[str]) -> list[str]:
-    seen: set[str] = set()
-    unique: list[str] = []
-    for item in items:
-        key = completed_task_key(item)
-        if not key or key in seen:
-            continue
-        seen.add(key)
-        unique.append(item)
-    return unique
-
-
-def completed_tasks_on_day(root: Path, day: dt.date) -> list[str]:
-    items: list[str] = []
-    items.extend(habit_completed_items_on_day(root, day))
-    items.extend(completed_checklist_items_on_day(read(schedule_path(root)), day))
-    items.extend(completed_checklist_items_on_day(read(today_path(root)), day))
-    for project_path in sorted((root / "projects").glob("*.md")):
-        items.extend(completed_checklist_items_on_day(read(project_path), day))
-    return unique_completed_tasks(items)
-
-
-def task_checklist_items_for_day(text: str, day: dt.date) -> list[tuple[str, bool]]:
-    items: list[tuple[str, bool]] = []
-    seen: set[str] = set()
-    day_markers = [
-        f"日期: {day.isoformat()}",
-        f"添加: {day.isoformat()}",
-        f"结转到: {day.isoformat()}",
-    ]
-    for line in text.splitlines():
-        match = re.match(r"^\s*-\s+\[([ xX])\]\s+(.*)$", line)
-        if not match:
-            continue
-        if not any(marker in line for marker in day_markers):
-            continue
-        task = strip_task_metadata(match.group(2))
-        if not task or task.startswith("没有需要结转"):
-            continue
-        key = normalize_match_text(task)
-        if key in seen:
-            continue
-        seen.add(key)
-        items.append((task, match.group(1).lower() == "x"))
-    return items
-
-
 def render_daily(root: Path, day: dt.date) -> str:
     yesterday_path = root / "dailies" / f"{(day - dt.timedelta(days=1)).isoformat()}.md"
     yesterday = read(yesterday_path)
-    done = completed_tasks_on_day(root, day - dt.timedelta(days=1)) or ["还没有记录已完成事项。"]
-    yesterday_undone = normalize_task_list(checklist_items(yesterday, checked=False))
-    today_task_items = task_checklist_items_for_day(read(today_path(root)), day)
-    today_open_tasks = [task for task, completed in today_task_items if not completed]
+    done = normalize_task_list(checklist_task_lines(yesterday, checked=True)) or ["还没有记录已完成事项。"]
+    yesterday_undone = normalize_task_list(checklist_task_lines(yesterday, checked=False, started=True))
+    today_open_tasks = normalize_task_list(checklist_task_lines(read(today_path(root)), checked=False, started=True))
     undone = yesterday_undone or today_open_tasks or ["没有需要结转的未完成事项。"]
-    waiting = checklist_items(read(root / "state" / "waiting.md"), checked=False) or bullet_lines(read(root / "state" / "waiting.md")) or ["当前没有等待中事项。"]
-    blocked = checklist_items(read(root / "state" / "blocked.md"), checked=False) or bullet_lines(read(root / "state" / "blocked.md")) or ["当前没有阻塞项。"]
+    waiting_text = read(root / "state" / "waiting.md")
+    blocked_text = read(root / "state" / "blocked.md")
+    waiting = checklist_task_lines(waiting_text, checked=False, started=True) or plain_task_lines(waiting_text, started=True) or ["当前没有等待中事项。"]
+    blocked = checklist_task_lines(blocked_text, checked=False, started=True) or plain_task_lines(blocked_text, started=True) or ["当前没有阻塞项。"]
     projects = project_summaries(root)
-    automations = checklist_items(iter_automation_text(root), checked=False)
+    automations = started_automation_titles(root)
     habits = habit_items(root, day)
-    today_tasks = today_task_items
+    today_tasks = normalize_task_list([*yesterday_undone, *today_open_tasks])
     near_tasks = near_term_tasks(root, day)
     new_tasks = tasks_added_on(root, day)
+    recommended_tasks, recommended_habits = recommended_unstarted_tasks(root)
     suggestions = render_daily_suggestions(
         near_tasks=near_tasks,
-        today_tasks=today_open_tasks,
+        today_tasks=today_tasks,
         waiting=waiting,
         blocked=blocked,
         projects=projects,
@@ -1254,19 +1556,29 @@ def render_daily(root: Path, day: dt.date) -> str:
 
 {as_bullets(near_tasks or ["近期没有记录需要处理的任务。"])}
 
+## 推荐任务
+
+### 推荐启动任务
+
+{as_recommendation_checklist(recommended_tasks) or "- 暂无可推荐的未启动任务。"}
+
+### 推荐启动 Habit
+
+{as_recommendation_checklist(recommended_habits) or "- 暂无可推荐的未启动 Habit。"}
+
 ## 今日任务清单
 
 ### Habit
 
 {as_habit_checklist(habits) or "- 暂无自动加入日报的 Habit。"}
 
-### 今日任务
+### 其他任务
 
-{as_task_checklist(today_tasks) or "- 暂无今日任务。"}
+{as_checklist(today_tasks) or "- 暂无其他任务。"}
 
 ## 今日新增任务
 
-{as_task_checklist(new_tasks) or "- 暂无。"}
+{as_checklist(new_tasks) or "- 暂无。"}
 
 ## 今日建议
 
@@ -1295,20 +1607,19 @@ def normalize_task_list(items: list[str]) -> list[str]:
     return normalized
 
 
-def tasks_added_on(root: Path, day: dt.date) -> list[tuple[str, bool]]:
-    tasks: list[tuple[str, bool]] = []
+def tasks_added_on(root: Path, day: dt.date) -> list[str]:
+    tasks: list[str] = []
     seen: set[str] = set()
     marker = f"添加: {day.isoformat()}"
     for line in read(today_path(root)).splitlines():
-        match = re.match(r"^\s*-\s+\[([ xX])\]\s+(.*)$", line)
-        if not match or marker not in line:
+        if not re.match(r"^\s*-\s+\[ \]\s+", line) or marker not in line or not line_started(line):
             continue
-        task = strip_task_metadata(match.group(2))
+        task = strip_task_metadata(line)
         key = normalize_match_text(task)
         if key in seen:
             continue
         seen.add(key)
-        tasks.append((task, match.group(1).lower() == "x"))
+        tasks.append(task)
     return tasks
 
 
@@ -1319,6 +1630,8 @@ def near_term_tasks(root: Path, day: dt.date) -> list[str]:
     seen: set[tuple[dt.date, str]] = set()
     for line in iter_schedule_lines(root):
         if not is_open_schedule_line(line):
+            continue
+        if not line_started(line):
             continue
         due = task_due_date(line)
         if not due or due < start:
@@ -1362,7 +1675,7 @@ def render_daily_suggestions(
     if near_tasks:
         suggestions.append(f"近期优先推进“{short_task(near_tasks[0])}”，先产出一个可验收的小结果，再处理低优先级事项。")
     if today_tasks:
-        suggestions.append(f"今日任务从“{short_task(today_tasks[0])}”开始，建议先用 25 到 45 分钟完成第一步，避免只停留在待办列表里。")
+        suggestions.append(f"今日其他任务从“{short_task(today_tasks[0])}”开始，建议先用 25 到 45 分钟完成第一步，避免只停留在待办列表里。")
     if open_habits:
         suggestions.append(f"Habit 还有 {len(open_habits)} 项未完成，建议把“{short_task(open_habits[0])}”安排到固定时段，完成后及时标记，保证连续记录不断。")
     if active_waiting:
@@ -1400,12 +1713,12 @@ def as_checklist(items: list[str]) -> str:
     return "\n".join(f"- [ ] {item}" for item in items)
 
 
-def as_task_checklist(items: list[tuple[str, bool]]) -> str:
-    return "\n".join(f"- [{'x' if completed else ' '}] {name}" for name, completed in items)
-
-
 def as_habit_checklist(items: list[tuple[str, bool]]) -> str:
     return "\n".join(f"- [{'x' if completed else ' '}] {name}" for name, completed in items)
+
+
+def as_recommendation_checklist(items: list[str]) -> str:
+    return "\n".join(f"- [ ] {item}" for item in items)
 
 
 def project_summaries(root: Path) -> list[str]:
@@ -1746,7 +2059,15 @@ def sync_project_subtask_delete(source_path: Path, line: str) -> None:
     project_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
 
 
-def sync_project_subtask_update(source_path: Path, old_line: str, new_task: str, new_date: Optional[dt.date]) -> None:
+def sync_project_subtask_update(
+    source_path: Path,
+    old_line: str,
+    new_task: str,
+    new_date: Optional[dt.date],
+    *,
+    started: bool,
+    priority: int,
+) -> None:
     if source_path.name != "schedule.md":
         return
     project = project_ref_from_line(old_line)
@@ -1764,15 +2085,26 @@ def sync_project_subtask_update(source_path: Path, old_line: str, new_task: str,
         if task_id not in line:
             lines.append(line)
             continue
-        due = new_date.isoformat() if new_date else (task_due_date(line) or today()).isoformat()
+        due = new_date.isoformat() if new_date else ""
         acceptance_match = re.search(r"\|\s*验收:\s*([^|]+)", line)
         acceptance = acceptance_match.group(1).strip() if acceptance_match else "按更新后的任务说明完成。"
-        lines.append(f"- [ ] {new_task} | 截止: {due} | 验收: {acceptance} | 子任务: {task_id}")
+        new_line = f"- [ ] {new_task} | 启动: {'已启动' if started else '未启动'}"
+        if started and due:
+            new_line += f" | 截止: {due}"
+        if not started:
+            new_line += f" | 优先级: {priority}"
+        new_line += f" | 验收: {acceptance} | 子任务: {task_id}"
+        lines.append(new_line)
         updated = True
     project_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
     if not updated:
-        due = new_date.isoformat() if new_date else today().isoformat()
-        append_under_heading(project_path, "子任务清单", f"- [ ] {new_task} | 截止: {due} | 验收: 按更新后的任务说明完成。 | 子任务: {task_id}")
+        new_line = f"- [ ] {new_task} | 启动: {'已启动' if started else '未启动'}"
+        if started and new_date:
+            new_line += f" | 截止: {new_date.isoformat()}"
+        if not started:
+            new_line += f" | 优先级: {priority}"
+        new_line += f" | 验收: 按更新后的任务说明完成。 | 子任务: {task_id}"
+        append_under_heading(project_path, "子任务清单", new_line)
 
 
 def update_task(args: argparse.Namespace) -> None:
@@ -1785,12 +2117,16 @@ def update_task(args: argparse.Namespace) -> None:
     candidate = candidates[0]
     new_task = args.new_task or strip_task_metadata(candidate.text)
     new_type = classify_task(new_task, args.type) if args.type else source_task_type(candidate.path)
-    new_date = parse_date(args.due_date) if args.due_date else task_due_date(candidate.text)
+    requested_started = True if getattr(args, "started", False) else False if getattr(args, "unstarted", False) else None
     old_line = read(candidate.path).splitlines()[candidate.start_line - 1]
+    old_started = line_started(old_line)
+    started = old_started if requested_started is None else requested_started
+    new_date = parse_date(args.due_date) if args.due_date else (task_due_date(candidate.text) if started else None)
+    new_priority = parse_priority_value(getattr(args, "priority", "") or "") or line_priority(old_line) or infer_priority(new_task, new_type)
     delete_remove_candidates([candidate])
-    add_updated_task(root, new_task, new_type, new_date, day, old_line)
+    add_updated_task(root, new_task, new_type, new_date, day, old_line, started=started, priority=new_priority)
     if candidate.path.name == "schedule.md":
-        sync_project_subtask_update(candidate.path, old_line, new_task, new_date)
+        sync_project_subtask_update(candidate.path, old_line, new_task, new_date, started=started, priority=new_priority)
     print(f"已更新任务: {query} -> {new_task} ({new_type})")
     print_diff(root)
 
@@ -1813,15 +2149,24 @@ def source_task_type(path: Path) -> str:
     return "today"
 
 
-def add_updated_task(root: Path, task: str, task_type: str, due_date: Optional[dt.date], day: dt.date, old_line: str) -> None:
-    if task_type == "today" and due_date and due_date != day:
+def add_updated_task(
+    root: Path,
+    task: str,
+    task_type: str,
+    due_date: Optional[dt.date],
+    day: dt.date,
+    old_line: str,
+    *,
+    started: bool,
+    priority: int,
+) -> None:
+    if task_type == "today" and started and due_date and due_date != day:
         task_type = "scheduled"
-    if task_type == "scheduled" and due_date == day:
-        append_unique_line(today_path(root), f"- [ ] {task} | 来源: scheduled | 日期: {day.isoformat()}")
+    if task_type == "scheduled" and started and due_date == day:
+        append_unique_line(today_path(root), f"- [ ] {task} | 来源: scheduled | 日期: {day.isoformat()} | 启动: 已启动")
     if task_type == "today":
-        add_today_task(root, task, day)
+        add_today_task(root, task, day, started=started, priority=priority)
     elif task_type == "scheduled":
-        date_text = due_date.isoformat() if due_date else day.isoformat()
         suffix = ""
         project = project_ref_from_line(old_line)
         task_id = task_id_from_line(old_line)
@@ -1829,18 +2174,27 @@ def add_updated_task(root: Path, task: str, task_type: str, due_date: Optional[d
             suffix += f" | 项目: {project}"
         if task_id:
             suffix += f" | 子任务: {task_id}"
-        append_unique_line(schedule_path(root), schedule_entry(task, dt.date.fromisoformat(date_text), suffix))
+        append_unique_line(schedule_path(root), schedule_entry(due_date=due_date, task=task, suffix=suffix, started=started, priority=priority))
     elif task_type == "habit":
-        append(root / "state" / "habits.md", "\n" + render_template("habit.md", habit_name=task))
+        content = render_template("habit.md", habit_name=task)
+        content = content.replace("- 启动: 未启动", f"- 启动: {'已启动' if started else '未启动'}")
+        content = content.replace("- 优先级: 1", f"- 优先级: {priority}")
+        append(root / "state" / "habits.md", "\n" + content)
         refresh_habit_stats(root)
     elif task_type == "waiting":
-        append_unique_line(root / "state" / "waiting.md", f"- [ ] {task} | 更新: {day.isoformat()}")
+        line = f"- [ ] {task} | 更新: {day.isoformat()} | 启动: {'已启动' if started else '未启动'}"
+        if not started:
+            line = set_pipe_field(line, "优先级", str(priority))
+        append_unique_line(root / "state" / "waiting.md", normalize_metadata_spacing(line))
     elif task_type == "blocked":
-        append_unique_line(root / "state" / "blocked.md", f"- [ ] {task} | 更新: {day.isoformat()}")
+        line = f"- [ ] {task} | 更新: {day.isoformat()} | 启动: {'已启动' if started else '未启动'}"
+        if not started:
+            line = set_pipe_field(line, "优先级", str(priority))
+        append_unique_line(root / "state" / "blocked.md", normalize_metadata_spacing(line))
     elif task_type == "project":
-        add_project_task(root, task, day)
+        add_project_task(root, task, day, started=started, priority=priority)
     elif task_type == "automation":
-        add_automation_candidate(root, task, day)
+        add_automation_candidate(root, task, day, started=started, priority=priority)
     else:
         append_unique_line(archive_path(root), f"- {day.isoformat()} {task}")
 
@@ -1956,6 +2310,147 @@ def print_diff(root: Path) -> None:
     print("git add . && git commit -m \"Update PersonalOS\"")
 
 
+def backfill_started(args: argparse.Namespace) -> None:
+    root = resolve_repo(args.repo)
+    for path in [today_path(root), schedule_path(root), root / "state" / "waiting.md", root / "state" / "blocked.md"]:
+        if path.exists():
+            path.write_text(backfill_started_lines(read(path), is_schedule=(path.name == "schedule.md")), encoding="utf-8")
+    habits_path = root / "state" / "habits.md"
+    if habits_path.exists():
+        habits_path.write_text(backfill_started_habits(read(habits_path)), encoding="utf-8")
+        refresh_habit_stats(root)
+    automation_file = automation_path(root)
+    if automation_file.exists():
+        automation_file.write_text(backfill_started_automations(read(automation_file)), encoding="utf-8")
+    for path in sorted((root / "projects").glob("*.md")):
+        path.write_text(backfill_started_project(read(path)), encoding="utf-8")
+    print("已将当前仓库中的存量任务补记为“已启动”。")
+    print_diff(root)
+
+
+def backfill_started_lines(text: str, *, is_schedule: bool) -> str:
+    lines: list[str] = []
+    for line in text.splitlines():
+        is_checkbox = bool(re.match(r"^\s*-\s+\[[ xX]\]\s+", line))
+        is_schedule_task = is_schedule and bool(re.match(r"^\s*-\s+", line))
+        if is_checkbox or is_schedule_task:
+            if "启动:" not in line:
+                line = set_pipe_field(line, "启动", "已启动")
+            line = normalize_metadata_spacing(line)
+        lines.append(line)
+    return "\n".join(lines).rstrip() + ("\n" if text else "")
+
+
+def backfill_started_habits(text: str) -> str:
+    result = text
+    for match, title, _name in reversed(habit_blocks(text)):
+        body = match.group(2)
+        if not re.search(r"^-\s*Habit:\s*", body, re.M):
+            body = f"- Habit: {title}\n" + body.lstrip("\n")
+        if not re.search(r"^-\s*启动:\s*", body, re.M):
+            body = body.rstrip() + "\n- 启动: 已启动\n"
+        if not re.search(r"^-\s*优先级:\s*", body, re.M):
+            body = body.rstrip() + f"\n- 优先级: {infer_priority(title, 'habit')}\n"
+        new_block = f"## {title}\n{body.rstrip()}\n"
+        result = result[:match.start()] + new_block + result[match.end():]
+    return result.rstrip() + "\n"
+
+
+def backfill_started_automations(text: str) -> str:
+    result = text
+    for match in reversed(list(re.finditer(r"^##\s+(.+?)\n(.*?)(?=^##\s+|\Z)", text, re.M | re.S))):
+        title = match.group(1).strip()
+        body = match.group(2).rstrip()
+        if "### 启动状态" not in body:
+            body = body.replace("### 为什么适合 Codex", "### 启动状态\n\n已启动\n\n### 优先级\n\n2\n\n### 为什么适合 Codex", 1)
+        elif extract_h3_field(body, "启动状态") == "未启动":
+            body = re.sub(r"(^###\s+启动状态\s*\n\n)(.*?)(?=\n### |\Z)", r"\1已启动", body, flags=re.M | re.S, count=1)
+        if "### 优先级" not in body:
+            body = body.replace("### 为什么适合 Codex", "### 优先级\n\n2\n\n### 为什么适合 Codex", 1)
+        result = result[:match.start()] + f"## {title}\n{body}\n" + result[match.end():]
+    return result.rstrip() + "\n"
+
+
+def backfill_started_project(text: str) -> str:
+    result = text
+    if "## 启动状态" not in result:
+        result = result.replace("## 下一步行动", "## 启动状态\n\n已启动\n\n## 优先级\n\n1\n\n## 下一步行动", 1)
+    else:
+        result = re.sub(r"(^##\s+启动状态\s*\n\n)(.*?)(?=\n## |\Z)", r"\1已启动", result, flags=re.M | re.S, count=1)
+    if "## 优先级" not in result:
+        result = result.replace("## 下一步行动", "## 优先级\n\n1\n\n## 下一步行动", 1)
+    lines: list[str] = []
+    for line in result.splitlines():
+        if re.match(r"^\s*-\s+\[[ xX]\]\s+", line) and "启动:" not in line:
+            line = set_pipe_field(line, "启动", "已启动")
+        lines.append(normalize_metadata_spacing(line) if "|" in line else line)
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def normalize_history(args: argparse.Namespace) -> None:
+    root = resolve_repo(args.repo)
+    targets = [
+        today_path(root),
+        schedule_path(root),
+        root / "state" / "waiting.md",
+        root / "state" / "blocked.md",
+        automation_path(root),
+    ]
+    targets.extend(sorted((root / "projects").glob("*.md")))
+    targets.extend(sorted((root / "dailies").glob("*.md")))
+    changed_paths: list[Path] = []
+    for path in targets:
+        if not path.exists():
+            continue
+        original = read(path)
+        updated = normalize_history_text(path, original)
+        if updated != original:
+            path.write_text(updated, encoding="utf-8")
+            changed_paths.append(path)
+    clean_today_habit_duplicates(root)
+    dedupe_open_today_tasks(root)
+    print("已完成历史任务文本规范化与去重。")
+    for path in changed_paths:
+        print(f"- {path}")
+    print_diff(root)
+
+
+def normalize_history_text(path: Path, text: str) -> str:
+    lines: list[str] = []
+    for raw in text.splitlines():
+        rewritten = rewrite_task_text_in_line(raw)
+        lines.extend(expand_combined_article_line(rewritten))
+    return "\n".join(lines).rstrip() + ("\n" if text else "")
+
+
+def dedupe_open_today_tasks(root: Path) -> bool:
+    path = today_path(root)
+    text = read(path)
+    if not text:
+        return False
+    lines = text.splitlines()
+    open_indexes: dict[str, int] = {}
+    for idx, line in enumerate(lines):
+        if not re.match(r"^\s*-\s+\[ \]\s+", line):
+            continue
+        key = normalize_match_text(canonicalize_task_text(strip_task_metadata(line)))
+        if not key:
+            continue
+        open_indexes[key] = idx
+    kept: list[str] = []
+    changed = False
+    for idx, line in enumerate(lines):
+        if re.match(r"^\s*-\s+\[ \]\s+", line):
+            key = normalize_match_text(canonicalize_task_text(strip_task_metadata(line)))
+            if key and open_indexes.get(key) != idx:
+                changed = True
+                continue
+        kept.append(line)
+    if changed:
+        path.write_text("\n".join(kept).rstrip() + "\n", encoding="utf-8")
+    return changed
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Operate a Git-backed PersonalOS repository.")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -1980,6 +2475,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("task", nargs="?")
     p.add_argument("--type")
     p.add_argument("--date")
+    p.add_argument("--started", action="store_true", help="Add the task as started. Omit to add as unstarted.")
     p.set_defaults(func=add_task)
 
     p = sub.add_parser("complete-task", help="Complete a matching task.")
@@ -1995,6 +2491,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--new-task", help="Replacement task text.")
     p.add_argument("--type", help="Replacement task type.")
     p.add_argument("--due-date", help="Replacement due date for scheduled/today flow.")
+    p.add_argument("--started", action="store_true", help="Mark the updated task as started.")
+    p.add_argument("--unstarted", action="store_true", help="Mark the updated task as unstarted.")
+    p.add_argument("--priority", help="Priority for an unstarted task.")
     p.add_argument("--date")
     p.set_defaults(func=update_task)
 
@@ -2021,7 +2520,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--date")
     p.add_argument("--deadline")
     p.add_argument("--confirm", action="store_true")
+    p.add_argument("--started", action="store_true", help="Write the project plan as started tasks with due dates.")
     p.set_defaults(func=plan_project)
+
+    p = sub.add_parser("backfill-started", help="Mark existing repository tasks as started.")
+    p.add_argument("repo", nargs="?")
+    p.set_defaults(func=backfill_started)
+
+    p = sub.add_parser("normalize-history", help="Canonicalize historical task text and dedupe open task records.")
+    p.add_argument("repo", nargs="?")
+    p.set_defaults(func=normalize_history)
 
     p = sub.add_parser("weekly-review", help="Generate a weekly review.")
     p.add_argument("repo", nargs="?")

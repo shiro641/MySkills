@@ -30,6 +30,9 @@ All newly generated user-facing Markdown content should be written in Chinese by
 - 阻塞项
 - 长期项目进展
 - 近3天需要处理任务
+- 推荐任务
+  - 推荐启动任务
+  - 推荐启动 Habit
 - 今日任务清单
   - Habit
   - 其他任务
@@ -41,6 +44,8 @@ All newly generated user-facing Markdown content should be written in Chinese by
 
 - 目标
 - 当前阶段
+- 启动状态
+- 优先级
 - 下一步行动
 - 进展
 - 里程碑
@@ -53,7 +58,9 @@ All newly generated user-facing Markdown content should be written in Chinese by
 ## Schedule Entry Required Fields
 
 - 状态
-- 截止
+- 启动
+- 截止, required only when `启动 = 已启动`
+- 优先级, required only when `启动 = 未启动`
 - 完成
 - 项目, when linked to a project
 - 子任务, when linked to a project subtask
@@ -63,6 +70,8 @@ Schedule entries in `state/schedule.md` do not use checkbox markers. The `状态
 ## Automation Candidate Required Fields
 
 - 来源任务
+- 启动状态
+- 优先级
 - 为什么适合 Codex
 - Codex Prompt
 - 执行步骤
@@ -75,6 +84,8 @@ Schedule entries in `state/schedule.md` do not use checkbox markers. The `状态
 - Habit
 - 频率
 - 自动加入日报
+- 启动
+- 优先级
 - 完成记录
 - 当前连续天数
 - 完成率
