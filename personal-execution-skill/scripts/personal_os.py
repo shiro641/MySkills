@@ -1408,7 +1408,10 @@ def clean_daily_habit_duplicates(root: Path, path: Path) -> bool:
     habit_keys = {normalize_match_text(name) for name in all_habit_names(root)}
     if not habit_keys:
         return False
-    lines = text.splitlines()
+    other_match = re.search(r"(^### 其他任务\n\n)(.*?)(?=\n### |\n## |\Z)", text, re.M | re.S)
+    if not other_match:
+        return False
+    lines = other_match.group(2).splitlines()
     kept: list[str] = []
     changed = False
     for line in lines:
@@ -1418,9 +1421,12 @@ def clean_daily_habit_duplicates(root: Path, path: Path) -> bool:
                 changed = True
                 continue
         kept.append(line)
-    if changed:
-        path.write_text("\n".join(kept).rstrip() + "\n", encoding="utf-8")
-    return changed
+    if not changed:
+        return False
+    replacement = other_match.group(1) + "\n".join(kept).rstrip() + "\n"
+    updated = text[:other_match.start()] + replacement + text[other_match.end():]
+    path.write_text(updated.rstrip() + "\n", encoding="utf-8")
+    return True
 
 
 def recommended_unstarted_tasks(root: Path) -> tuple[list[str], list[str]]:
@@ -1506,8 +1512,9 @@ def preserve_daily_review(new_content: str, old_content: str) -> str:
 def render_daily(root: Path, day: dt.date) -> str:
     yesterday_path = root / "dailies" / f"{(day - dt.timedelta(days=1)).isoformat()}.md"
     yesterday = read(yesterday_path)
-    done = normalize_task_list(checklist_task_lines(yesterday, checked=True)) or ["还没有记录已完成事项。"]
-    yesterday_undone = normalize_task_list(checklist_task_lines(yesterday, checked=False, started=True))
+    yesterday_execution = extract_section(yesterday, "今日任务清单") or yesterday
+    done = normalize_task_list(checklist_task_lines(yesterday_execution, checked=True)) or ["还没有记录已完成事项。"]
+    yesterday_undone = normalize_task_list(checklist_task_lines(yesterday_execution, checked=False, started=True))
     today_open_tasks = normalize_task_list(checklist_task_lines(read(today_path(root)), checked=False, started=True))
     undone = yesterday_undone or today_open_tasks or ["没有需要结转的未完成事项。"]
     waiting_text = read(root / "state" / "waiting.md")
@@ -1560,11 +1567,11 @@ def render_daily(root: Path, day: dt.date) -> str:
 
 ### 推荐启动任务
 
-{as_recommendation_checklist(recommended_tasks) or "- 暂无可推荐的未启动任务。"}
+{as_recommendation_list(recommended_tasks) or "- 暂无可推荐的未启动任务。"}
 
 ### 推荐启动 Habit
 
-{as_recommendation_checklist(recommended_habits) or "- 暂无可推荐的未启动 Habit。"}
+{as_recommendation_list(recommended_habits) or "- 暂无可推荐的未启动 Habit。"}
 
 ## 今日任务清单
 
@@ -1717,8 +1724,8 @@ def as_habit_checklist(items: list[tuple[str, bool]]) -> str:
     return "\n".join(f"- [{'x' if completed else ' '}] {name}" for name, completed in items)
 
 
-def as_recommendation_checklist(items: list[str]) -> str:
-    return "\n".join(f"- [ ] {item}" for item in items)
+def as_recommendation_list(items: list[str]) -> str:
+    return "\n".join(f"- {item}" for item in items)
 
 
 def project_summaries(root: Path) -> list[str]:
