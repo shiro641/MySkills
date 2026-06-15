@@ -1,0 +1,4 @@
+interface:
+  display_name: "Progressive Learning Coach"
+  short_description: "File-backed progressive learning plans"
+  default_prompt: "Use $progressive-learning-coach to continue or create a file-backed learning plan."

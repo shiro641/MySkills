@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "projects": {
+    "rust": {
+      "subject": "Rust",
+      "state_dir": "/Users/zhangjie/Desktop/code-practise/rust",
+      "files": {
+        "assistant": "rust-practice-assistant.md",
+        "knowledge_status": "knowledge-status.md",
+        "weekly_plan": "weekly-plan.md",
+        "question_log": "question-log.md",
+        "archive": "rust-learning-archive.md"
+      },
+      "aliases": [
+        "rust-learning",
+        "rust-daily-practice"
+      ],
+      "updated_at": "2026-06-15"
+    }
+  }
+}
